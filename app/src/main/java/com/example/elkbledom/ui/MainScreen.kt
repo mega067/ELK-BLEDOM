@@ -1,0 +1,541 @@
+package com.example.elkbledom.ui
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bluetooth
+import androidx.compose.material.icons.filled.BluetoothConnected
+import androidx.compose.material.icons.filled.BluetoothDisabled
+import androidx.compose.material.icons.filled.BluetoothSearching
+import androidx.compose.material.icons.filled.Lightbulb
+import androidx.compose.material.icons.filled.LightbulbCircle
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.Power
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Divider
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import com.example.elkbledom.ble.ConnectionState
+import com.example.elkbledom.ble.LedPattern
+import com.example.elkbledom.ui.components.ColorPicker
+import com.example.elkbledom.ui.components.PatternSelector
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MainScreen(
+    vm: MainViewModel,
+    onRequestMediaProjection: () -> Unit = {},
+) {
+    val ui by vm.ui.collectAsState()
+
+    // Forward ViewModel's projection requests to the Activity
+    LaunchedEffect(vm) {
+        vm.projectionRequest.collect { onRequestMediaProjection() }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            painter = androidx.compose.ui.res.painterResource(id = com.example.elkbledom.R.drawable.ic_launcher_foreground),
+                            contentDescription = null,
+                            modifier = Modifier.size(32.dp),
+                            tint = Color.Unspecified
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("ELK-BLEDOM", fontWeight = FontWeight.Bold)
+                    }
+                },
+                actions = {
+                    ConnectionIcon(ui.connectionState)
+                    if (ui.connectionState == ConnectionState.CONNECTED) {
+                        IconButton(onClick = { vm.togglePower() }) {
+                            Icon(
+                                if (ui.isPoweredOn) Icons.Default.Lightbulb else Icons.Default.LightbulbCircle,
+                                contentDescription = "Toggle power",
+                                tint = if (ui.isPoweredOn) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                ),
+            )
+        },
+        containerColor = MaterialTheme.colorScheme.background,
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            ConnectionCard(ui, vm)
+
+            if (ui.connectionState == ConnectionState.CONNECTED) {
+                BrightnessCard(ui.brightness, vm::setBrightness)
+
+                AnimatedVisibility(visible = !ui.isMusicSync) {
+                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        SectionCard {
+                            ColorPicker(
+                                hue = ui.hue,
+                                saturation = ui.saturation,
+                                colorValue = ui.colorValue,
+                                onHueSaturationChanged = vm::setHueSaturation,
+                                onValueChanged = vm::setColorValue,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                        SectionCard {
+                            PatternSelector(
+                                selectedPattern = ui.selectedPattern,
+                                patternSpeed = ui.patternSpeed,
+                                onPatternSelected = vm::selectPattern,
+                                onSpeedChanged = vm::setPatternSpeed,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
+                }
+
+                MusicSyncCard(ui, vm)
+            }
+
+            Spacer(Modifier.height(32.dp))
+        }
+    }
+}
+
+// ── Connection Card ───────────────────────────────────────────────────────────
+
+@Composable
+private fun ConnectionCard(ui: UiState, vm: MainViewModel) {
+    SectionCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.Bluetooth, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.width(8.dp))
+            Text("Bluetooth", style = MaterialTheme.typography.titleMedium)
+        }
+        Spacer(Modifier.height(12.dp))
+
+        when (ui.connectionState) {
+            ConnectionState.DISCONNECTED, ConnectionState.ERROR -> {
+                if (ui.connectionState == ConnectionState.ERROR) {
+                    Text(
+                        "Connection failed. Try again.",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                }
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(
+                        painter = androidx.compose.ui.res.painterResource(id = com.example.elkbledom.R.drawable.ic_launcher_foreground),
+                        contentDescription = null,
+                        modifier = Modifier.size(100.dp),
+                        tint = Color.Unspecified
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        "Ready to illuminate?",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                
+                Button(onClick = { vm.startScan() }, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.BluetoothSearching, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Scan for devices")
+                }
+            }
+
+            ConnectionState.SCANNING -> {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Scanning…", style = MaterialTheme.typography.bodyMedium)
+                    Spacer(Modifier.weight(1f))
+                    FilledTonalButton(onClick = { vm.stopScan() }) { Text("Stop") }
+                }
+                Spacer(Modifier.height(8.dp))
+                if (ui.scannedDevices.isEmpty()) {
+                    Text(
+                        "Looking for BLE devices…",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    ui.scannedDevices.forEach { dev ->
+                        DeviceRow(
+                            name = dev.name,
+                            address = dev.device.address,
+                            rssi = dev.rssi,
+                            onClick = { vm.connectTo(dev.device) },
+                        )
+                    }
+                }
+            }
+
+            ConnectionState.CONNECTING -> {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Connecting…", style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+
+            ConnectionState.CONNECTED -> {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(
+                        Icons.Default.BluetoothConnected, contentDescription = null,
+                        tint = Color(0xFF4CAF50), modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("Connected", color = Color(0xFF4CAF50), fontWeight = FontWeight.Medium)
+                    Spacer(Modifier.weight(1f))
+                    FilledTonalButton(onClick = { vm.disconnect() }) {
+                        Icon(Icons.Default.BluetoothDisabled, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Disconnect")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DeviceRow(name: String, address: String, rssi: Int, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp, horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(name, fontWeight = FontWeight.Medium, style = MaterialTheme.typography.bodyMedium)
+            Text(address, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Text("$rssi dBm", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+}
+
+// ── Brightness Card ───────────────────────────────────────────────────────────
+
+@Composable
+private fun BrightnessCard(brightness: Int, onChanged: (Int) -> Unit) {
+    SectionCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.Power, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.width(8.dp))
+            Text("Brightness: $brightness%", style = MaterialTheme.typography.titleMedium)
+        }
+        Spacer(Modifier.height(8.dp))
+        Slider(
+            value = brightness.toFloat(),
+            onValueChange = { onChanged(it.toInt()) },
+            valueRange = 1f..100f,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+// ── Music Sync Card ───────────────────────────────────────────────────────────
+
+@Composable
+private fun MusicSyncCard(ui: UiState, vm: MainViewModel) {
+    SectionCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.MusicNote, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.width(8.dp))
+            Text("Music Sync", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+            Switch(checked = ui.isMusicSync, onCheckedChange = { vm.setMusicSync(it) })
+        }
+
+        AnimatedVisibility(visible = ui.isMusicSync) {
+            Column {
+                Spacer(Modifier.height(12.dp))
+
+                // ── Audio source selector ─────────────────────────────────
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = ui.audioMode == AudioMode.MIC,
+                        onClick = { vm.setAudioMode(AudioMode.MIC) },
+                        label = { Text("Microphone") },
+                        leadingIcon = {
+                            Icon(Icons.Default.Mic, contentDescription = null, modifier = Modifier.size(16.dp))
+                        },
+                    )
+                    FilterChip(
+                        selected = ui.audioMode == AudioMode.PLAYBACK,
+                        onClick = {
+                            if (ui.isPlaybackSupported) vm.setAudioMode(AudioMode.PLAYBACK)
+                        },
+                        enabled = ui.isPlaybackSupported,
+                        label = { Text("Phone Audio") },
+                        leadingIcon = {
+                            Icon(Icons.Default.PhoneAndroid, contentDescription = null, modifier = Modifier.size(16.dp))
+                        },
+                    )
+                }
+
+                if (!ui.isPlaybackSupported) {
+                    Text(
+                        "Phone Audio requires Android 10+",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else if (ui.audioMode == AudioMode.PLAYBACK) {
+                    Text(
+                        "Captures what plays through your speakers or headphones.\n" +
+                            "Note: DRM-protected apps (Spotify, Netflix) block capture.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    Text(
+                        "Microphone picks up sound from the room — works with any source.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                // ── Per-band colour pickers ───────────────────────────────
+                Text(
+                    "Band Colours  ·  tap a swatch to assign  ·  tap ✕ to mute",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                BandColorRow("Bass",  ui.bassColor,  vm::setBassColor)
+                Spacer(Modifier.height(6.dp))
+                BandColorRow("Mids",  ui.midColor,   vm::setMidColor)
+                Spacer(Modifier.height(6.dp))
+                BandColorRow("Highs", ui.highColor,  vm::setHighColor)
+
+                Spacer(Modifier.height(16.dp))
+
+                // ── Frequency visualiser ──────────────────────────────────
+                FreqBars(
+                    bass = ui.freqData.bass,
+                    mid  = ui.freqData.mid,
+                    high = ui.freqData.high,
+                    isBeat = ui.freqData.isBeat,
+                    bassColor = ui.bassColor.toComposeColor(),
+                    midColor  = ui.midColor.toComposeColor(),
+                    highColor = ui.highColor.toComposeColor(),
+                    bassActive = ui.bassColor != SyncColor.OFF,
+                    midActive  = ui.midColor  != SyncColor.OFF,
+                    highActive = ui.highColor != SyncColor.OFF,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FreqBars(
+    bass: Float, mid: Float, high: Float, isBeat: Boolean,
+    bassColor: Color, midColor: Color, highColor: Color,
+    bassActive: Boolean, midActive: Boolean, highActive: Boolean,
+) {
+    val animBass by animateFloatAsState(targetValue = bass, animationSpec = tween(80), label = "bass")
+    val animMid  by animateFloatAsState(targetValue = mid,  animationSpec = tween(80), label = "mid")
+    val animHigh by animateFloatAsState(targetValue = high, animationSpec = tween(80), label = "high")
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        FreqBar("Bass",  animBass, bassColor, bassActive, Modifier.weight(1f))
+        FreqBar("Mids",  animMid,  midColor,  midActive,  Modifier.weight(1f))
+        FreqBar("Highs", animHigh, highColor, highActive, Modifier.weight(1f))
+    }
+
+    if (isBeat) {
+        Spacer(Modifier.height(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(modifier = Modifier.size(8.dp).background(Color(0xFFFFBB33), CircleShape))
+            Spacer(Modifier.width(6.dp))
+            Text("Beat", style = MaterialTheme.typography.bodySmall, color = Color(0xFFFFBB33))
+        }
+    }
+}
+
+@Composable
+private fun FreqBar(label: String, level: Float, barColor: Color, active: Boolean, modifier: Modifier = Modifier) {
+    val barHeight = 120.dp
+    val drawColor = if (active) barColor else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
+    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(modifier = Modifier.fillMaxWidth().height(barHeight), contentAlignment = Alignment.BottomCenter) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(barHeight * level.coerceIn(0.02f, 1f))
+                    .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
+                    .background(Brush.verticalGradient(listOf(drawColor, drawColor.copy(alpha = 0.35f)))),
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            if (active) label else "$label ✕",
+            style = MaterialTheme.typography.labelSmall,
+            color = if (active) MaterialTheme.colorScheme.onSurfaceVariant
+                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f),
+        )
+    }
+}
+
+// ── Band colour picker row ────────────────────────────────────────────────────
+
+@Composable
+private fun BandColorRow(
+    label: String,
+    selected: SyncColor,
+    onSelect: (SyncColor) -> Unit,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.width(36.dp),
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Row(
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            SyncColor.entries.forEach { color ->
+                ColorSwatch(color = color, selected = color == selected, onClick = { onSelect(color) })
+            }
+        }
+    }
+}
+
+@Composable
+private fun ColorSwatch(color: SyncColor, selected: Boolean, onClick: () -> Unit) {
+    val displayColor = color.toComposeColor()
+    Box(
+        modifier = Modifier
+            .size(28.dp)
+            .border(
+                width = if (selected) 2.dp else 0.5.dp,
+                color = if (selected) Color.White else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                shape = CircleShape,
+            )
+            .padding(if (selected) 2.dp else 0.dp)
+            .clip(CircleShape)
+            .background(displayColor)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (color == SyncColor.OFF) {
+            Text("✕", style = MaterialTheme.typography.labelSmall, color = Color.White)
+        }
+    }
+}
+
+// ── SyncColor → Compose Color ─────────────────────────────────────────────────
+
+private fun SyncColor.toComposeColor(): Color = when (this) {
+    SyncColor.OFF -> Color(0xFF2A2A2A)
+    else          -> Color(red = r / 255f, green = g / 255f, blue = b / 255f)
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+@Composable
+private fun ConnectionIcon(state: ConnectionState) {
+    val icon = when (state) {
+        ConnectionState.CONNECTED -> Icons.Default.BluetoothConnected
+        ConnectionState.SCANNING, ConnectionState.CONNECTING -> Icons.Default.BluetoothSearching
+        else -> Icons.Default.BluetoothDisabled
+    }
+    val tint = when (state) {
+        ConnectionState.CONNECTED -> Color(0xFF4CAF50)
+        ConnectionState.SCANNING, ConnectionState.CONNECTING -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Icon(icon, contentDescription = state.name, tint = tint, modifier = Modifier.padding(end = 4.dp))
+}
+
+@Composable
+private fun SectionCard(content: @Composable () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        ),
+        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+        shape = RoundedCornerShape(24.dp),
+    ) {
+        Column(Modifier.padding(16.dp)) { content() }
+    }
+}

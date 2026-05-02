@@ -1,0 +1,72 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    
+    <!-- Background Gradient Glow -->
+    <path
+        android:pathData="M54,54m-45,0a45,45 0,1 1,90 0a45,45 0,1 1,-90 0">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:centerX="54"
+                android:centerY="54"
+                android:gradientRadius="45"
+                android:type="radial">
+                <item android:offset="0" android:color="#4D9C7BFF"/>
+                <item android:offset="0.7" android:color="#1A6DF0D2"/>
+                <item android:offset="1" android:color="#00000000"/>
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Lightbulb Outline -->
+    <path
+        android:pathData="M54,20 C42.95,20 34,28.95 34,40 C34,48.05 38.6,55.05 45.3,58.35 C47,59.15 48,60.85 48,62.65 L48,70 C48,71.1 48.9,72 50,72 L58,72 C59.1,72 60,71.1 60,70 L60,62.65 C60,60.85 61,59.15 62.7,58.35 C69.4,55.05 74,48.05 74,40 C74,28.95 65.05,20 54,20 Z"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:startX="34"
+                android:startY="20"
+                android:endX="74"
+                android:endY="72"
+                android:type="linear">
+                <item android:offset="0" android:color="#9C7BFF"/>
+                <item android:offset="1" android:color="#6DF0D2"/>
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- RGB Filaments -->
+    <!-- Red -->
+    <path
+        android:pathData="M48,35 Q54,25 60,35"
+        android:strokeWidth="2"
+        android:strokeColor="#FF5252"
+        android:strokeLineCap="round"/>
+    <!-- Green -->
+    <path
+        android:pathData="M46,42 Q54,32 62,42"
+        android:strokeWidth="2"
+        android:strokeColor="#69F0AE"
+        android:strokeLineCap="round"/>
+    <!-- Blue -->
+    <path
+        android:pathData="M44,49 Q54,39 64,49"
+        android:strokeWidth="2"
+        android:strokeColor="#40C4FF"
+        android:strokeLineCap="round"/>
+
+    <!-- Bulb Base -->
+    <path
+        android:pathData="M50,76 L58,76 C59.1,76 60,76.9 60,78 L60,78 C60,79.1 59.1,80 58,80 L50,80 C48.9,80 48,79.1 48,78 L48,78 C48,76.9 48.9,76 50,76 Z"
+        android:fillColor="#50507A"/>
+    <path
+        android:pathData="M51,82 L57,82 C58.1,82 59,82.9 59,84 L59,84 C59,85.1 58.1,86 57,86 L51,86 C49.9,86 49,85.1 49,84 L49,84 C49,82.9 49.9,82 51,82 Z"
+        android:fillColor="#50507A"/>
+    <path
+        android:pathData="M54,88 m-2,0 a2,2 0,1 1,4 0 a2,2 0,1 1,-4 0"
+        android:fillColor="#50507A"/>
+</vector>
