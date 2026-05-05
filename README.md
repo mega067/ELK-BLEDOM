@@ -16,6 +16,8 @@ An Android app built with **Kotlin + Jetpack Compose** for controlling ELK-BLEDO
   - **Per-band colour selection** — assign any of 11 colours (or Off) independently to Bass, Mids, and Highs
   - **Additive colour mixing** — all three bands blend simultaneously on the strip
   - **Beat detection** — energy-threshold algorithm highlights kick drums and transients
+- **Screen Sync (Ambilight mode)** *(Android 10+)* — mirrors the dominant colour on your screen to the LEDs in real time using media projection
+- **Android TV support** — dedicated TV interface optimized for D-pad navigation with a sidebar layout
 
 ---
 
@@ -129,7 +131,7 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 ### Patterns
 
-- Select any pattern chip (Jump RGB, Fade, Flash, etc.)
+- Open the **Pattern dropdown** to select an effect (Jump RGB, Fade, Flash, Strobe, Crossfade, etc.)
 - Adjust **Speed** with the slider that appears
 - Select **Solid** to return to static colour mode
 
@@ -145,6 +147,14 @@ adb install app/build/outputs/apk/debug/app-debug.apk
    - **Highs** (4000–16000 Hz) — defaults to Blue
    - Tap **✕** to mute a band entirely
 4. All active bands are **mixed additively** in real time on the LED strip
+5. Enable **Ambilight smooth** in Settings to blend colour changes gradually during sync modes (works for both Music and Screen sync)
+
+### Screen Sync
+
+1. Toggle **Screen Sync** on *(requires Android 10+)*
+2. A system prompt will ask for permission to capture your screen (required for Ambilight mirroring)
+3. The app calculates the dominant screen colour at 20 frames per second and mirrors it to the LED strip
+4. Enable **Ambilight smooth** in Settings to blend colour changes gradually, which is easier on the eyes (works for both Screen and Music sync)
 
 ---
 
@@ -216,6 +226,12 @@ app/src/main/java/com/example/elkbledom/
 | `RECORD_AUDIO` | Microphone input for music sync |
 | `FOREGROUND_SERVICE` | Keeps the audio capture service alive |
 | `FOREGROUND_SERVICE_MEDIA_PROJECTION` | Required to start a `mediaProjection`-type foreground service (Android 14+) |
+
+---
+
+## TODO
+
+- Fix the color palettes (dropdowns) for the Android and Android TV screens so they function correctly.
 
 ---
 

@@ -1,12 +1,14 @@
 package com.example.elkbledom
 
 import android.Manifest
+import android.app.UiModeManager
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
+import android.content.res.Configuration
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Bundle
@@ -39,6 +41,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.example.elkbledom.ui.AudioMode
 import com.example.elkbledom.ui.MainScreen
 import com.example.elkbledom.ui.MainViewModel
+import com.example.elkbledom.ui.TvScreen
 import com.example.elkbledom.ui.theme.ELKBledomTheme
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -47,6 +50,11 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
 
     private val viewModel: MainViewModel by viewModels()
+
+    private val isTV: Boolean by lazy {
+        (getSystemService(UI_MODE_SERVICE) as UiModeManager).currentModeType ==
+            Configuration.UI_MODE_TYPE_TELEVISION
+    }
 
     private var permissionsGranted by mutableStateOf(false)
     private var bluetoothEnabled by mutableStateOf(false)
@@ -130,7 +138,7 @@ class MainActivity : ComponentActivity() {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 var wasCapturing = false
                 viewModel.ui
-                    .map { it.isMusicSync && it.audioMode == AudioMode.PLAYBACK }
+                    .map { (it.isMusicSync && it.audioMode == AudioMode.PLAYBACK) || it.isScreenSync }
                     .distinctUntilChanged()
                     .collect { isCapturing ->
                         if (!isCapturing && wasCapturing) {
@@ -148,10 +156,17 @@ class MainActivity : ComponentActivity() {
                     when {
                         !permissionsGranted -> PermissionGate(onRequest = ::requestPermissions)
                         !bluetoothEnabled   -> BluetoothGate(onEnable = ::requestBluetooth)
-                        else -> MainScreen(
-                            vm = viewModel,
-                            onRequestMediaProjection = ::launchProjectionConsent,
-                        )
+                        else -> if (isTV) {
+                            TvScreen(
+                                vm = viewModel,
+                                onRequestMediaProjection = ::launchProjectionConsent,
+                            )
+                        } else {
+                            MainScreen(
+                                vm = viewModel,
+                                onRequestMediaProjection = ::launchProjectionConsent,
+                            )
+                        }
                     }
                 }
             }

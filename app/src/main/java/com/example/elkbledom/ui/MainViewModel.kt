@@ -13,6 +13,7 @@ import com.example.elkbledom.ble.ConnectionState
 import com.example.elkbledom.ble.ELKBledomProtocol
 import com.example.elkbledom.ble.LedPattern
 import com.example.elkbledom.ble.ScannedDevice
+import com.example.elkbledom.screen.ScreenAnalyzer
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -62,6 +63,11 @@ data class UiState(
     val bassColor: SyncColor = SyncColor.RED,
     val midColor: SyncColor = SyncColor.GREEN,
     val highColor: SyncColor = SyncColor.BLUE,
+    val isScreenSync: Boolean = false,
+    val screenR: Int = 0,
+    val screenG: Int = 0,
+    val screenB: Int = 0,
+    val isAmbilightSmooth: Boolean = false,
 )
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
@@ -77,6 +83,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private var mediaProjection: MediaProjection? = null
     private var connectJob: Job? = null
     private var musicSyncJob: Job? = null
+    private var screenSyncJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -104,6 +111,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun disconnect() {
         stopMusicSync()
+        stopScreenSync()
         bleManager.disconnect()
     }
 
@@ -135,7 +143,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun applyCurrentColor() {
-        if (_ui.value.isMusicSync || _ui.value.selectedPattern != LedPattern.SOLID) return
+        if (_ui.value.isMusicSync || _ui.value.isScreenSync || _ui.value.selectedPattern != LedPattern.SOLID) return
         val s = _ui.value
         val (r, g, b) = hsvToRgb(s.hue, s.saturation, s.colorValue)
         send(ELKBledomProtocol.setColor(r, g, b))
@@ -164,8 +172,53 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ── Music sync ────────────────────────────────────────────────────────────
 
     fun setMusicSync(enabled: Boolean) {
+        if (enabled && _ui.value.isScreenSync) {
+            stopScreenSync()
+            _ui.update { it.copy(isScreenSync = false) }
+        }
         _ui.update { it.copy(isMusicSync = enabled) }
         if (enabled) startMusicSync() else stopMusicSync()
+    }
+
+    // ── Screen sync ───────────────────────────────────────────────────────────
+
+    fun setScreenSync(enabled: Boolean) {
+        if (enabled && _ui.value.isMusicSync) {
+            stopMusicSync()
+            _ui.update { it.copy(isMusicSync = false) }
+        }
+        _ui.update { it.copy(isScreenSync = enabled) }
+        if (enabled) startScreenSync() else stopScreenSync()
+    }
+
+    private fun startScreenSync() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        val mp = mediaProjection
+        if (mp == null) {
+            _projectionRequest.tryEmit(Unit)
+            return
+        }
+        screenSyncJob?.cancel()
+        screenSyncJob = viewModelScope.launch {
+            ScreenAnalyzer.stream(mp, getApplication()).collect { color ->
+                val s = _ui.value
+                // Ambilight smooth: α=0.07 (dreamy); off: α=0.25 (snappy).
+                val alpha = if (s.isAmbilightSmooth) 0.07f else 0.25f
+                val r = (s.screenR + alpha * (color.r - s.screenR)).toInt()
+                val g = (s.screenG + alpha * (color.g - s.screenG)).toInt()
+                val b = (s.screenB + alpha * (color.b - s.screenB)).toInt()
+                _ui.update { it.copy(screenR = r, screenG = g, screenB = b) }
+                if (s.connectionState == ConnectionState.CONNECTED) {
+                    send(ELKBledomProtocol.setColor(r, g, b))
+                }
+            }
+        }
+    }
+
+    private fun stopScreenSync() {
+        screenSyncJob?.cancel()
+        screenSyncJob = null
+        _ui.update { it.copy(screenR = 0, screenG = 0, screenB = 0) }
     }
 
     fun setAudioMode(mode: AudioMode) {
@@ -177,20 +230,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun setBassColor(color: SyncColor)  = _ui.update { it.copy(bassColor = color) }
-    fun setMidColor(color: SyncColor)   = _ui.update { it.copy(midColor  = color) }
-    fun setHighColor(color: SyncColor)  = _ui.update { it.copy(highColor = color) }
+    fun setBassColor(color: SyncColor)      = _ui.update { it.copy(bassColor = color) }
+    fun setMidColor(color: SyncColor)       = _ui.update { it.copy(midColor  = color) }
+    fun setHighColor(color: SyncColor)      = _ui.update { it.copy(highColor = color) }
+    fun setAmbilightSmooth(enabled: Boolean) = _ui.update { it.copy(isAmbilightSmooth = enabled) }
 
     fun onMediaProjection(mp: MediaProjection?, cancelled: Boolean = false) {
         mediaProjection?.stop()
         mediaProjection = mp
         when {
-            mp == null && cancelled -> _ui.update { it.copy(audioMode = AudioMode.MIC) }
+            mp == null && cancelled -> _ui.update { it.copy(audioMode = AudioMode.MIC, isScreenSync = false) }
             mp != null && _ui.value.isMusicSync -> restartMusicSync()
+            mp != null && _ui.value.isScreenSync -> startScreenSync()
         }
     }
 
     fun releaseProjection() {
+        stopScreenSync()
+        _ui.update { it.copy(isScreenSync = false) }
         mediaProjection?.stop()
         mediaProjection = null
     }
@@ -208,20 +265,25 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 AudioAnalyzer.streamMic()
             }
 
+            // Running smoothed colour — persists across frames so interpolation is continuous.
+            var sr = 0f; var sg = 0f; var sb = 0f
+
             flow.collect { data ->
                 _ui.update { it.copy(freqData = data) }
                 if (_ui.value.connectionState == ConnectionState.CONNECTED) {
                     val s = _ui.value
-                    // Each band contributes its chosen colour scaled by energy level.
-                    // Colours are mixed additively, clamped to 0–255.
                     val (br, bg, bb) = bandContrib(data.bass, s.bassColor)
                     val (mr, mg, mb) = bandContrib(data.mid,  s.midColor)
                     val (hr, hg, hb) = bandContrib(data.high, s.highColor)
-                    send(ELKBledomProtocol.setColor(
-                        (br + mr + hr).coerceIn(0, 255),
-                        (bg + mg + hg).coerceIn(0, 255),
-                        (bb + mb + hb).coerceIn(0, 255),
-                    ))
+                    val tr = (br + mr + hr).coerceIn(0, 255).toFloat()
+                    val tg = (bg + mg + hg).coerceIn(0, 255).toFloat()
+                    val tb = (bb + mb + hb).coerceIn(0, 255).toFloat()
+                    // Ambilight smooth: blend toward target at α=0.2; off = instant (α=1).
+                    val alpha = if (s.isAmbilightSmooth) 0.2f else 1f
+                    sr += alpha * (tr - sr)
+                    sg += alpha * (tg - sg)
+                    sb += alpha * (tb - sb)
+                    send(ELKBledomProtocol.setColor(sr.toInt(), sg.toInt(), sb.toInt()))
                 }
             }
         }

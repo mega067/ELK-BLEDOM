@@ -29,23 +29,27 @@ object ELKBledomProtocol {
         return byteArrayOf(0x7E, 0x04, 0x01, b, 0x00, 0x00, 0x00, 0x00, 0xEF.toByte())
     }
 
-    /** speed: 1–255 */
+    /**
+     * Effect command: 7E 05 03 [speed] [mode] 03 00 00 EF
+     * Byte 3 = speed (1–255), byte 4 = mode — order is fixed by the firmware.
+     */
     fun setEffect(effectCode: Byte, speed: Int = 100): ByteArray {
         val s = speed.coerceIn(1, 255).toByte()
-        return byteArrayOf(0x7E, 0x05, 0x03, effectCode, s, 0x03, 0x00, 0x00, 0xEF.toByte())
+        return byteArrayOf(0x7E, 0x05, 0x03, s, effectCode, 0x03, 0x00, 0x00, 0xEF.toByte())
     }
 }
 
 enum class LedPattern(val displayName: String, val effectCode: Byte) {
-    SOLID("Solid", 0x00),
-    JUMP_RGB("Jump RGB", 0x80.toByte()),
-    JUMP_ALL("Jump All", 0x81.toByte()),
-    FADE_RGB("Fade RGB", 0x82.toByte()),
-    FADE_ALL("Fade All", 0x83.toByte()),
-    CROSSFADE_R("Fade Red", 0x84.toByte()),
-    CROSSFADE_G("Fade Green", 0x85.toByte()),
-    CROSSFADE_B("Fade Blue", 0x86.toByte()),
-    FLASH_RGB("Flash RGB", 0x8C.toByte()),
-    FLASH_ALL("Flash All", 0x8D.toByte()),
-    STROBE_W("Strobe White", 0x94.toByte()),
+    SOLID        ("Solid",           0x00),
+    JUMP_RGB     ("Jump RGB",        0x85.toByte()),
+    JUMP_ALL     ("Jump All",        0x86.toByte()),
+    FADE_RGB     ("Fade RGB",        0x87.toByte()),
+    FADE_ALL     ("Fade All",        0x88.toByte()),
+    CROSSFADE_R  ("Crossfade Red",   0x89.toByte()),
+    CROSSFADE_G  ("Crossfade Green", 0x8A.toByte()),
+    CROSSFADE_B  ("Crossfade Blue",  0x8B.toByte()),
+    CROSSFADE_W  ("Crossfade White", 0x8F.toByte()),
+    FLASH_RGB    ("Flash RGB",       0x91.toByte()),
+    FLASH_ALL    ("Flash All",       0x92.toByte()),
+    STROBE_W     ("Strobe White",    0x97.toByte()),
 }

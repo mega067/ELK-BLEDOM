@@ -33,28 +33,41 @@ import androidx.compose.material.icons.filled.LightbulbCircle
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Power
+import androidx.compose.material.icons.filled.ScreenShare
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -74,6 +87,8 @@ fun MainScreen(
     onRequestMediaProjection: () -> Unit = {},
 ) {
     val ui by vm.ui.collectAsState()
+    var showColorSheet by remember { mutableStateOf(false) }
+    val colorSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     // Forward ViewModel's projection requests to the Activity
     LaunchedEffect(vm) {
@@ -128,18 +143,14 @@ fun MainScreen(
             if (ui.connectionState == ConnectionState.CONNECTED) {
                 BrightnessCard(ui.brightness, vm::setBrightness)
 
-                AnimatedVisibility(visible = !ui.isMusicSync) {
+                AnimatedVisibility(visible = !ui.isMusicSync && !ui.isScreenSync) {
                     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        SectionCard {
-                            ColorPicker(
-                                hue = ui.hue,
-                                saturation = ui.saturation,
-                                colorValue = ui.colorValue,
-                                onHueSaturationChanged = vm::setHueSaturation,
-                                onValueChanged = vm::setColorValue,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                        }
+                        ColorPreviewCard(
+                            hue = ui.hue,
+                            saturation = ui.saturation,
+                            colorValue = ui.colorValue,
+                            onClick = { showColorSheet = true },
+                        )
                         SectionCard {
                             PatternSelector(
                                 selectedPattern = ui.selectedPattern,
@@ -153,9 +164,70 @@ fun MainScreen(
                 }
 
                 MusicSyncCard(ui, vm)
+                ScreenSyncCard(ui, vm)
+                AmbilightCard(ui.isAmbilightSmooth, vm::setAmbilightSmooth)
             }
 
             Spacer(Modifier.height(32.dp))
+        }
+    }
+
+    // ── Colour picker bottom sheet ────────────────────────────────────────────
+
+    if (showColorSheet) {
+        val (r, g, b) = hsvToRgb(ui.hue, ui.saturation, ui.colorValue)
+        ModalBottomSheet(
+            onDismissRequest = { showColorSheet = false },
+            sheetState = colorSheetState,
+            containerColor = MaterialTheme.colorScheme.surface,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .padding(bottom = 32.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Text(
+                    "Pick a colour",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+
+                // Live preview — updates in real time as the wheel is dragged
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(52.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color(r / 255f, g / 255f, b / 255f))
+                            .border(
+                                0.5.dp,
+                                MaterialTheme.colorScheme.outline.copy(alpha = 0.25f),
+                                RoundedCornerShape(12.dp),
+                            ),
+                    )
+                    Text(
+                        "#%02X%02X%02X".format(r, g, b),
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+
+                ColorPicker(
+                    hue = ui.hue,
+                    saturation = ui.saturation,
+                    colorValue = ui.colorValue,
+                    onHueSaturationChanged = vm::setHueSaturation,
+                    onValueChanged = vm::setColorValue,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
         }
     }
 }
@@ -284,6 +356,62 @@ private fun DeviceRow(name: String, address: String, rssi: Int, onClick: () -> U
     Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
 }
 
+// ── Colour preview card (opens bottom-sheet picker on tap) ────────────────────
+
+@Composable
+private fun ColorPreviewCard(
+    hue: Float,
+    saturation: Float,
+    colorValue: Float,
+    onClick: () -> Unit,
+) {
+    val (r, g, b) = hsvToRgb(hue, saturation, colorValue)
+    val currentColor = Color(r / 255f, g / 255f, b / 255f)
+
+    SectionCard {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .clickable(onClick = onClick)
+                .padding(vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Icon(Icons.Default.Palette, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Text(
+                "Colour",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.weight(1f),
+            )
+            // Swatch bar — wide enough to read the hue clearly
+            Box(
+                modifier = Modifier
+                    .width(72.dp)
+                    .height(30.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(currentColor)
+                    .border(
+                        0.5.dp,
+                        MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
+                        RoundedCornerShape(8.dp),
+                    ),
+            )
+            Text(
+                "#%02X%02X%02X".format(r, g, b),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Icon(
+                Icons.Default.ChevronRight,
+                contentDescription = "Open colour picker",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+    }
+}
+
 // ── Brightness Card ───────────────────────────────────────────────────────────
 
 @Composable
@@ -399,8 +527,81 @@ private fun MusicSyncCard(ui: UiState, vm: MainViewModel) {
     }
 }
 
+// ── Screen Sync Card ──────────────────────────────────────────────────────────
+
 @Composable
-private fun FreqBars(
+private fun ScreenSyncCard(ui: UiState, vm: MainViewModel) {
+    SectionCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.ScreenShare, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.width(8.dp))
+            Text("Screen Sync", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+            Switch(
+                checked = ui.isScreenSync,
+                onCheckedChange = { vm.setScreenSync(it) },
+                enabled = ui.isPlaybackSupported,
+            )
+        }
+
+        if (!ui.isPlaybackSupported) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Screen Sync requires Android 10+",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        AnimatedVisibility(visible = ui.isScreenSync) {
+            Column {
+                Spacer(Modifier.height(12.dp))
+
+                val previewColor = Color(
+                    red   = ui.screenR / 255f,
+                    green = ui.screenG / 255f,
+                    blue  = ui.screenB / 255f,
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(previewColor)
+                            .border(
+                                0.5.dp,
+                                MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                                RoundedCornerShape(8.dp),
+                            ),
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            "Dominant colour",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            "#%02X%02X%02X".format(ui.screenR, ui.screenG, ui.screenB),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Mirrors the dominant colour on your screen to the LEDs in real time — " +
+                        "saturation-weighted at 20 fps. Bright, colourful content works best.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+internal fun FreqBars(
     bass: Float, mid: Float, high: Float, isBeat: Boolean,
     bassColor: Color, midColor: Color, highColor: Color,
     bassActive: Boolean, midActive: Boolean, highActive: Boolean,
@@ -430,7 +631,7 @@ private fun FreqBars(
 }
 
 @Composable
-private fun FreqBar(label: String, level: Float, barColor: Color, active: Boolean, modifier: Modifier = Modifier) {
+internal fun FreqBar(label: String, level: Float, barColor: Color, active: Boolean, modifier: Modifier = Modifier) {
     val barHeight = 120.dp
     val drawColor = if (active) barColor else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
     Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
@@ -455,32 +656,79 @@ private fun FreqBar(label: String, level: Float, barColor: Color, active: Boolea
 
 // ── Band colour picker row ────────────────────────────────────────────────────
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun BandColorRow(
+internal fun BandColorRow(
     label: String,
     selected: SyncColor,
     onSelect: (SyncColor) -> Unit,
 ) {
+    var expanded by remember { mutableStateOf(false) }
+    
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(
             label,
             style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.width(36.dp),
+            modifier = Modifier.width(42.dp),
             color = MaterialTheme.colorScheme.onSurface,
         )
-        Row(
-            modifier = Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        
+        ExposedDropdownMenuBox(
+            expanded = expanded,
+            onExpandedChange = { expanded = it },
+            modifier = Modifier.weight(1f)
         ) {
-            SyncColor.entries.forEach { color ->
-                ColorSwatch(color = color, selected = color == selected, onClick = { onSelect(color) })
+            OutlinedTextField(
+                value = selected.name,
+                onValueChange = {},
+                readOnly = true,
+                leadingIcon = {
+                    Box(
+                        modifier = Modifier
+                            .size(16.dp)
+                            .clip(CircleShape)
+                            .background(selected.toComposeColor())
+                            .border(0.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f), CircleShape)
+                    )
+                },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
+                modifier = Modifier
+                    .menuAnchor()
+                    .fillMaxWidth()
+                    .height(52.dp),
+                textStyle = MaterialTheme.typography.bodyMedium
+            )
+            ExposedDropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+            ) {
+                SyncColor.entries.forEach { color ->
+                    DropdownMenuItem(
+                        text = { Text(color.name) },
+                        onClick = {
+                            onSelect(color)
+                            expanded = false
+                        },
+                        leadingIcon = {
+                            Box(
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .clip(CircleShape)
+                                    .background(color.toComposeColor())
+                                    .border(0.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f), CircleShape)
+                            )
+                        },
+                        contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding,
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-private fun ColorSwatch(color: SyncColor, selected: Boolean, onClick: () -> Unit) {
+internal fun ColorSwatch(color: SyncColor, selected: Boolean, onClick: () -> Unit) {
     val displayColor = color.toComposeColor()
     Box(
         modifier = Modifier
@@ -504,9 +752,43 @@ private fun ColorSwatch(color: SyncColor, selected: Boolean, onClick: () -> Unit
 
 // ── SyncColor → Compose Color ─────────────────────────────────────────────────
 
-private fun SyncColor.toComposeColor(): Color = when (this) {
+internal fun SyncColor.toComposeColor(): Color = when (this) {
     SyncColor.OFF -> Color(0xFF2A2A2A)
     else          -> Color(red = r / 255f, green = g / 255f, blue = b / 255f)
+}
+
+// ── Ambilight smooth card ─────────────────────────────────────────────────────
+
+@Composable
+private fun AmbilightCard(isEnabled: Boolean, onToggle: (Boolean) -> Unit) {
+    SectionCard {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .clickable { onToggle(!isEnabled) }
+                .padding(vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Checkbox(
+                checked = isEnabled,
+                onCheckedChange = onToggle,
+            )
+            Spacer(Modifier.width(4.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Ambilight smooth",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                )
+                Text(
+                    "Blends colour changes gradually — easier on the eyes during sync modes.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
