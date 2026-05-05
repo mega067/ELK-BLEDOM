@@ -229,11 +229,6 @@ app/src/main/java/com/example/elkbledom/
 
 ---
 
-## TODO
-
-- Fix the color palettes (dropdowns) for the Android and Android TV screens so they function correctly.
-
----
 
 ## Known limitations
 
