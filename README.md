@@ -1,23 +1,73 @@
 # ELK-BLEDOM LED Controller
 
-An Android app built with **Kotlin + Jetpack Compose** for controlling ELK-BLEDOM Bluetooth LE LED strips. Includes a colour picker, brightness control, built-in light patterns, and a real-time **music sync mode** that maps frequency bands to LED colours using live FFT analysis.
+> A fully native Android app for controlling ELK-BLEDOM Bluetooth LE LED strips — built with Kotlin and Jetpack Compose.
+
+![Min SDK](https://img.shields.io/badge/Android-8.0%2B-brightgreen)
+![Kotlin](https://img.shields.io/badge/Kotlin-2.1.0-7F52FF)
+![Compose BOM](https://img.shields.io/badge/Compose%20BOM-2024.12.01-4285F4)
+![License](https://img.shields.io/badge/License-MIT-blue)
+
+---
+
+## What it does
+
+Connect your phone to an ELK-BLEDOM LED strip over Bluetooth and control every aspect of the light — colour, brightness, animated patterns, real-time music sync, and a live screen mirror (Ambilight) mode. Works on both phones and Android TV boxes.
 
 ---
 
 ## Features
 
-- **Bluetooth LE scanning** — discovers nearby ELK-BLEDOM devices and lists them by signal strength
-- **Colour picker** — HSV colour wheel with brightness slider and 10 preset swatches
-- **Brightness control** — global brightness slider (1–100 %)
-- **Pattern selection** — 11 built-in LED effects (Jump RGB, Fade, Flash, Strobe, Crossfade, and more) with adjustable speed
-- **Music sync** — real-time 4096-point FFT drives the LEDs from audio:
-  - **Microphone mode** — picks up room sound; works with any audio source
-  - **Phone Audio mode** *(Android 10+)* — captures internal playback directly; works with headphones
-  - **Per-band colour selection** — assign any of 11 colours (or Off) independently to Bass, Mids, and Highs
-  - **Additive colour mixing** — all three bands blend simultaneously on the strip
-  - **Beat detection** — energy-threshold algorithm highlights kick drums and transients
-- **Screen Sync (Ambilight mode)** *(Android 10+)* — mirrors the dominant colour on your screen to the LEDs in real time using media projection
-- **Android TV support** — dedicated TV interface optimized for D-pad navigation with a sidebar layout
+### Colour & Brightness
+- **Colour picker** — HSV wheel in a bottom sheet so it never interferes with page scrolling; includes a live colour preview bar and hex code readout
+- **Preset swatches** — one-tap colour presets
+- **Brightness control** — independent 1–100 % slider sent directly to the device firmware
+
+### Animated Patterns
+All patterns are animated entirely on the phone — no unreliable firmware effect codes involved. Only the proven `setColor` command is used.
+
+| Pattern | Description |
+|---|---|
+| Solid | Static colour (uses the colour picker) |
+| Jump RGB | Instantly hops between Red → Green → Blue |
+| Jump All | Instantly hops through 7 rainbow colours |
+| Fade RGB | Smooth crossfade between Red, Green, Blue |
+| Fade All | Smooth crossfade through 7 rainbow colours |
+| Crossfade Red | Pulses red in and out |
+| Crossfade Green Blue | Crossfades between green and blue |
+| Crossfade Blue | Pulses blue in and out |
+| Crossfade White | Pulses white in and out |
+| Flash RGB | Flashes Red / Green / Blue with black gaps |
+| Flash All | Flashes all 7 rainbow colours with black gaps |
+| Strobe White | Rapid white strobe |
+
+**Speed** is set by typing a delay in milliseconds directly into the input field (10 – 5000 ms). Lower = faster.
+
+### Music Sync
+Real-time FFT analysis drives the LED colour from audio:
+
+- **Microphone mode** — listens to the room; works with any audio source, including headphones
+- **Phone Audio mode** *(Android 10+)* — captures internal app playback directly without a microphone; a one-time system consent prompt is shown on first use
+- **Per-band colour** — assign any of 11 colours (or Off) independently to Bass, Mids, and Highs
+- **Additive mixing** — all active bands blend simultaneously on the strip in real time
+- **Beat detection** — energy-threshold algorithm highlights kick drums and transients
+
+> **Note:** DRM-protected apps (Spotify, Netflix, Apple Music) block internal audio capture. Use Microphone mode for those.
+
+### Screen Sync (Ambilight)
+*(Android 10+ only)*
+
+- Captures your screen via MediaProjection at 20 fps
+- Calculates the dominant colour across the frame
+- Mirrors it to the LED strip with configurable smoothing
+
+### Android TV
+- Dedicated two-panel layout designed for D-pad navigation
+- Sidebar navigation with focus-glow highlighting
+- Full feature parity: colour (H/S/V sliders), brightness, patterns, music sync, screen sync, and settings
+- Appears in the Android TV launcher with a custom banner
+
+### Settings
+- **Ambilight smooth** — exponential blending for gradual colour transitions during Music Sync and Screen Sync (reduces jarring cuts)
 
 ---
 
@@ -32,165 +82,172 @@ An Android app built with **Kotlin + Jetpack Compose** for controlling ELK-BLEDO
 | Requirement | Detail |
 |---|---|
 | Android version | 8.0 Oreo (API 26) or higher |
-| Phone Audio mode | Android 10 (API 29) or higher |
-| Device | Physical Android device — BLE and microphone do not work on emulators |
-| LED controller | ELK-BLEDOM or compatible BLE LED strip (BLEDOM, LEDBLE, etc.) |
+| Phone Audio / Screen Sync | Android 10 (API 29) or higher |
+| Device | Physical Android phone or TV box — BLE does not work on emulators |
+| LED hardware | ELK-BLEDOM or compatible BLE strip (BLEDOM, LEDBLE, etc.) |
 
 ---
 
 ## Build instructions
 
-### 1 — Install the JDK
+No Android Studio required. You only need the JDK and the Android command-line tools.
 
-Download and install **JDK 21** (Temurin recommended):
-```
-https://adoptium.net/temurin/releases/?version=21
-```
+### Step 1 — Install JDK 21
+
+Download **Temurin JDK 21** from [adoptium.net](https://adoptium.net/temurin/releases/?version=21) and install it.
+
 Verify:
 ```bash
-java -version   # should print 21.x
+java -version   # should print 21.x.x
 ```
 
-### 2 — Install the Android SDK (no Android Studio needed)
+### Step 2 — Install the Android SDK
 
-Download **command-line tools only** from:
-```
-https://developer.android.com/studio#command-line-tools-only
-```
+Download **command-line tools only** from the [Android Studio download page](https://developer.android.com/studio#command-line-tools-only).
 
-Extract to `C:\Android\cmdline-tools\latest\`, then install SDK components:
+Extract to `C:\Android\cmdline-tools\latest\`, then accept licenses and install the required components:
 ```bash
 sdkmanager --licenses
 sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 ```
 
-Set environment variables:
+Add these environment variables:
 ```
 ANDROID_HOME = C:\Android
 PATH        += C:\Android\platform-tools
 PATH        += C:\Android\cmdline-tools\latest\bin
 ```
 
-### 3 — Configure the project
+### Step 3 — Configure the project
 
-Create `local.properties` in the project root:
+Create a `local.properties` file in the project root:
 ```properties
 sdk.dir=C\:\\Android
 ```
 
-### 4 — Get the Gradle wrapper
+### Step 4 — Get the Gradle wrapper
 
-Download the wrapper JAR and place it at `gradle/wrapper/gradle-wrapper.jar`:
+If you don't have Gradle installed, download the wrapper JAR directly:
 ```
 https://raw.githubusercontent.com/gradle/gradle/v8.9.0/gradle/wrapper/gradle-wrapper.jar
 ```
+Place it at `gradle/wrapper/gradle-wrapper.jar`.
 
-Or if you have Gradle installed locally:
+Or, if Gradle is available locally:
 ```bash
 gradle wrapper --gradle-version=8.9
 ```
 
-### 5 — Build
+### Step 5 — Build
 
 ```bash
 ./gradlew assembleDebug
 ```
 
-The APK is output to:
+The APK will be at:
 ```
 app/build/outputs/apk/debug/app-debug.apk
 ```
 
-### 6 — Install on device
+### Step 6 — Install
 
-Enable **USB Debugging** on your phone (*Settings → Developer options*), then:
+Enable **USB Debugging** on your device (*Settings → Developer options*), then:
 ```bash
 adb install app/build/outputs/apk/debug/app-debug.apk
 ```
 
 > **Out of memory during build?**
-> Edit `gradle.properties` and raise the heap: `-Xmx4g` (or `-Xmx6g` on machines with ≥ 12 GB RAM).
+> Open `gradle.properties` and increase the heap: set `org.gradle.jvmargs=-Xmx4g` (use `-Xmx6g` on machines with 12 GB+ RAM).
 
 ---
 
 ## Usage
 
-### Connecting to the LED strip
+### Connecting
 
 1. Power on your LED strip
-2. Open the app and tap **Scan for devices**
-3. Tap your device in the list (typically named `ELK-BLEDOM`)
-4. The status icon turns green when connected
+2. Open the app and tap **Scan**
+3. Tap your device in the list (usually named `ELK-BLEDOM`)
+4. The status indicator turns green when connected
 
-### Static colour
+### Setting a colour
 
-- Drag the **colour wheel** to set hue and saturation
-- Use the **brightness slider** under the wheel to set value
-- Tap a **preset swatch** for quick colour changes
-- The global **Brightness** slider at the top controls overall LED intensity independently
+- Tap the **Colour** row to open the colour picker sheet
+- Drag the wheel to choose hue and saturation; drag the bar below for brightness
+- Tap a preset swatch for an instant colour
 
-### Patterns
+### Choosing a pattern
 
-- Open the **Pattern dropdown** to select an effect (Jump RGB, Fade, Flash, Strobe, Crossfade, etc.)
-- Adjust **Speed** with the slider that appears
-- Select **Solid** to return to static colour mode
+1. Open the **Pattern** dropdown and select an effect
+2. Type a delay in the **Delay (ms)** field that appears — this controls the speed of the animation
+3. Select **Solid** to stop the animation and return to static colour
 
 ### Music Sync
 
 1. Toggle **Music Sync** on
-2. Choose an audio source:
-   - **Microphone** — listens to the room; works everywhere
-   - **Phone Audio** — captures app playback directly; requires Android 10+ and a one-time system consent prompt. Note: DRM-protected apps (Spotify, Netflix) block internal capture — use microphone mode for those.
-3. Set a colour for each frequency band by tapping swatches in the **Band Colours** rows:
-   - **Bass** (60–250 Hz) — defaults to Red
-   - **Mids** (250–4000 Hz) — defaults to Green
-   - **Highs** (4000–16000 Hz) — defaults to Blue
-   - Tap **✕** to mute a band entirely
-4. All active bands are **mixed additively** in real time on the LED strip
-5. Enable **Ambilight smooth** in Settings to blend colour changes gradually during sync modes (works for both Music and Screen sync)
+2. Select your audio source — **Microphone** or **Phone Audio**
+3. Tap the colour swatches in the **Band Colours** row to assign a colour to each band:
+   - **Bass** (60–250 Hz)
+   - **Mids** (250–4000 Hz)
+   - **Highs** (4000–16 000 Hz)
+   - Tap **Off** to silence a band
+4. Enable **Ambilight smooth** in Settings for gradual colour blending
 
 ### Screen Sync
 
-1. Toggle **Screen Sync** on *(requires Android 10+)*
-2. A system prompt will ask for permission to capture your screen (required for Ambilight mirroring)
-3. The app calculates the dominant screen colour at 20 frames per second and mirrors it to the LED strip
-4. Enable **Ambilight smooth** in Settings to blend colour changes gradually, which is easier on the eyes (works for both Screen and Music sync)
+1. Toggle **Screen Sync** on
+2. Accept the system screen-capture consent prompt
+3. The dominant screen colour is mirrored to the strip at up to 20 fps
+4. Enable **Ambilight smooth** for a softer, more cinematic look
 
 ---
 
-## Technical details
+## How it works
 
-### BLE protocol (ELK-BLEDOM)
+### BLE protocol
 
-| Command | Bytes |
+All commands are 9-byte frames sent with `WRITE_TYPE_NO_RESPONSE` for minimum latency.
+
+| Command | Frame |
 |---|---|
 | Power on | `7E 04 04 F0 00 01 FF 00 EF` |
 | Power off | `7E 04 04 00 00 00 FF 00 EF` |
 | Set colour (R, G, B) | `7E 07 05 03 RR GG BB 10 EF` |
 | Set brightness (0–100) | `7E 04 01 BR 00 00 00 00 EF` |
-| Set effect (code, speed) | `7E 05 03 EF SP 03 00 00 EF` |
 
-All writes use `WRITE_TYPE_NO_RESPONSE` for low latency. The app tries the primary service/characteristic UUID pair (`FFF0`/`FFF3`) and falls back to the alternate pair (`FFE5`/`FFE9`) automatically.
+The app auto-detects which UUID pair the strip uses: primary (`FFF0` / `FFF3`) or alternate (`FFE5` / `FFE9`).
+
+> The firmware's built-in effect commands (`7E 05 03 …`) were found to be unreliable across devices. All patterns in this app are animated in software using only the `setColor` command.
 
 ### Audio analysis
 
-- **Sample rate:** 44 100 Hz
-- **FFT size:** 4096 points (Cooley-Tukey radix-2, in-place)
-- **Window:** Hann, applied before each transform
-- **Frequency resolution:** ≈ 10.8 Hz per bin
-- **Update rate:** ≈ 10 Hz (one FFT per filled buffer)
-- **Dynamic normalisation:** per-band rolling peak with 0.5 % per-frame decay keeps bars full-range regardless of playback volume
-- **Beat detection:** current bass-weighted energy vs. 4-second rolling average; fires when ratio exceeds 1.4×
+| Parameter | Value |
+|---|---|
+| Sample rate | 44 100 Hz |
+| FFT size | 4096 points (Cooley-Tukey radix-2) |
+| Window | Hann |
+| Frequency resolution | ≈ 10.8 Hz / bin |
+| Update rate | ≈ 10 Hz |
+| Normalisation | Per-band rolling peak with 0.5 % / frame decay |
+| Beat detection | Bass energy vs. 4-second rolling average; fires at > 1.4× |
 
 ### Colour mixing
 
-Each band's energy (0–1) scales its assigned RGB colour, and all three contributions are summed:
+Each band's energy (0–1) scales its assigned colour; all three are summed:
 
 ```
-R = clamp(bassLevel × bassColor.r  +  midLevel × midColor.r  +  highLevel × highColor.r,  0, 255)
-G = clamp(bassLevel × bassColor.g  +  midLevel × midColor.g  +  highLevel × highColor.g,  0, 255)
-B = clamp(bassLevel × bassColor.b  +  midLevel × midColor.b  +  highLevel × highColor.b,  0, 255)
+R = clamp(bass × bassR  +  mid × midR  +  high × highR,  0, 255)
+G = clamp(bass × bassG  +  mid × midG  +  high × highG,  0, 255)
+B = clamp(bass × bassB  +  mid × midB  +  high × highB,  0, 255)
 ```
+
+### Pattern animation
+
+Every non-Solid pattern runs as a coroutine loop in the ViewModel, sending `setColor` frames at the user-configured delay. The delay is read on each iteration, so changing the value in the text field takes effect immediately without restarting the animation.
+
+### Screen capture
+
+`ScreenAnalyzer` creates a `VirtualDisplay` at 160 px wide via MediaProjection, reads `RGBA_8888` frames through an `ImageReader`, samples every 4th pixel, and computes a saturation-weighted average colour. Exponential smoothing (α = 0.07 for smooth mode, 0.25 for snappy) blends consecutive frames.
 
 ---
 
@@ -198,43 +255,45 @@ B = clamp(bassLevel × bassColor.b  +  midLevel × midColor.b  +  highLevel × h
 
 ```
 app/src/main/java/com/example/elkbledom/
-├── MainActivity.kt                 # Permission flow, BT enable, MediaProjection launcher
-├── MediaProjectionService.kt       # Foreground service required for internal audio capture
+├── MainActivity.kt                   # Permission flow, BT enable, TV detection, MediaProjection
+├── MediaProjectionService.kt         # Foreground service (required before getMediaProjection())
 ├── ble/
-│   ├── BleManager.kt               # Scan, GATT connect, WRITE_NO_RESPONSE command sender
-│   └── ELKBledomProtocol.kt        # Pure byte-frame builders + LedPattern enum
+│   ├── BleManager.kt                 # BLE scan, GATT connect, command sender
+│   └── ELKBledomProtocol.kt          # Byte-frame builders + LedPattern enum
 ├── audio/
-│   └── AudioAnalyzer.kt            # AudioRecord → Hann window → FFT → band energy → Flow
+│   └── AudioAnalyzer.kt              # AudioRecord → Hann → FFT → band energy → Flow
+├── screen/
+│   └── ScreenAnalyzer.kt             # MediaProjection → VirtualDisplay → dominant colour → Flow
 └── ui/
-    ├── MainViewModel.kt            # State holder, sync logic, SyncColor enum
-    ├── MainScreen.kt               # Top-level Compose screen
+    ├── MainViewModel.kt              # UiState, pattern coroutines, sync logic
+    ├── MainScreen.kt                 # Phone UI (scrollable, bottom sheet colour picker)
+    ├── TvScreen.kt                   # TV UI (two-panel D-pad layout)
     ├── components/
-    │   ├── ColorPicker.kt          # HSV colour wheel (Canvas bitmap) + sliders
-    │   └── PatternSelector.kt      # Pattern chips + speed slider
+    │   ├── ColorPicker.kt            # HSV colour wheel (Canvas) + sliders
+    │   └── PatternSelector.kt        # Pattern dropdown + ms delay input
     └── theme/
-        └── Theme.kt                # Dark Material3 colour scheme
+        └── Theme.kt                  # Dark Material 3 colour scheme
 ```
 
 ---
 
 ## Permissions
 
-| Permission | Why |
+| Permission | Purpose |
 |---|---|
-| `BLUETOOTH_SCAN` / `BLUETOOTH_CONNECT` | BLE device discovery and connection (Android 12+) |
+| `BLUETOOTH_SCAN` / `BLUETOOTH_CONNECT` | BLE discovery and connection (Android 12+) |
 | `ACCESS_FINE_LOCATION` | Required for BLE scanning on Android 11 and below |
-| `RECORD_AUDIO` | Microphone input for music sync |
-| `FOREGROUND_SERVICE` | Keeps the audio capture service alive |
-| `FOREGROUND_SERVICE_MEDIA_PROJECTION` | Required to start a `mediaProjection`-type foreground service (Android 14+) |
+| `RECORD_AUDIO` | Microphone input for Music Sync |
+| `FOREGROUND_SERVICE` | Keeps the capture service alive in the background |
+| `FOREGROUND_SERVICE_MEDIA_PROJECTION` | Required for MediaProjection foreground service (Android 14+) |
 
 ---
 
-
 ## Known limitations
 
-- **DRM content** (Spotify, Apple Music, Netflix, etc.) cannot be captured in Phone Audio mode — use Microphone mode instead
-- **BLE command rate** is limited by the device firmware; the app sends one colour frame per FFT buffer (~10 Hz), which is within safe limits for all tested controllers
-- **First build** takes several minutes to download Gradle and compile the Compose compiler; subsequent builds are incremental and fast
+- **DRM content** (Spotify, Netflix, Apple Music) cannot be captured in Phone Audio mode — use Microphone mode instead
+- **BLE throughput** is limited by the device firmware; pattern animations aim for ~20 fps but the actual update rate depends on the controller
+- **First build** downloads Gradle and compiles the Compose compiler — allow 5–10 minutes; subsequent builds are incremental
 
 ---
 
