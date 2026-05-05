@@ -154,9 +154,9 @@ fun MainScreen(
                         SectionCard {
                             PatternSelector(
                                 selectedPattern = ui.selectedPattern,
-                                patternSpeed = ui.patternSpeed,
+                                patternSpeedMs = ui.patternSpeedMs,
                                 onPatternSelected = vm::selectPattern,
-                                onSpeedChanged = vm::setPatternSpeed,
+                                onSpeedChanged = vm::setPatternSpeedMs,
                                 modifier = Modifier.fillMaxWidth(),
                             )
                         }

@@ -15,6 +15,7 @@ import com.example.elkbledom.ble.LedPattern
 import com.example.elkbledom.ble.ScannedDevice
 import com.example.elkbledom.screen.ScreenAnalyzer
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -54,12 +55,11 @@ data class UiState(
     val colorValue: Float = 1f,
     val brightness: Int = 100,
     val selectedPattern: LedPattern = LedPattern.SOLID,
-    val patternSpeed: Float = 0.5f,
+    val patternSpeedMs: Long = 200L,
     val isMusicSync: Boolean = false,
     val audioMode: AudioMode = AudioMode.MIC,
     val freqData: FrequencyData = FrequencyData(0f, 0f, 0f, false),
     val isPlaybackSupported: Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q,
-    // Per-band colour — OFF disables that band's contribution
     val bassColor: SyncColor = SyncColor.RED,
     val midColor: SyncColor = SyncColor.GREEN,
     val highColor: SyncColor = SyncColor.BLUE,
@@ -84,12 +84,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private var connectJob: Job? = null
     private var musicSyncJob: Job? = null
     private var screenSyncJob: Job? = null
+    private var patternJob: Job? = null
+
+    // Delay read dynamically each iteration so typing a new value takes effect immediately
+    private val holdMs get() = _ui.value.patternSpeedMs.coerceAtLeast(10L)
+    private val fadeStepMs get() = _ui.value.patternSpeedMs.coerceAtLeast(10L)
 
     init {
         viewModelScope.launch {
             bleManager.connectionState.collect { state ->
                 _ui.update { it.copy(connectionState = state) }
-                if (state == ConnectionState.CONNECTED) applyCurrentColor()
+                if (state == ConnectionState.CONNECTED) {
+                    if (_ui.value.selectedPattern == LedPattern.SOLID) {
+                        applyCurrentColor()
+                    } else {
+                        startPatternLoop()
+                    }
+                }
             }
         }
         viewModelScope.launch {
@@ -110,6 +121,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun disconnect() {
+        stopPatternLoop()
         stopMusicSync()
         stopScreenSync()
         bleManager.disconnect()
@@ -153,19 +165,102 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun selectPattern(pattern: LedPattern) {
         _ui.update { it.copy(selectedPattern = pattern) }
+        stopPatternLoop()
         if (pattern == LedPattern.SOLID) {
             applyCurrentColor()
         } else {
-            val speed = (_ui.value.patternSpeed * 255).toInt().coerceIn(1, 255)
-            send(ELKBledomProtocol.setEffect(pattern.effectCode, speed))
+            startPatternLoop()
         }
     }
 
-    fun setPatternSpeed(speed: Float) {
-        _ui.update { it.copy(patternSpeed = speed) }
-        val s = _ui.value
-        if (s.selectedPattern != LedPattern.SOLID) {
-            send(ELKBledomProtocol.setEffect(s.selectedPattern.effectCode, (speed * 255).toInt().coerceIn(1, 255)))
+    fun setPatternSpeedMs(ms: Long) {
+        _ui.update { it.copy(patternSpeedMs = ms.coerceIn(10L, 5000L)) }
+    }
+
+    private fun startPatternLoop() {
+        patternJob?.cancel()
+        val pattern = _ui.value.selectedPattern
+        if (pattern == LedPattern.SOLID) return
+        patternJob = viewModelScope.launch {
+            when (pattern) {
+                LedPattern.JUMP_RGB    -> runJump(RGB_3)
+                LedPattern.JUMP_ALL    -> runJump(RGB_7)
+                LedPattern.FADE_RGB    -> runFade(RGB_3)
+                LedPattern.FADE_ALL    -> runFade(RGB_7)
+                LedPattern.CROSSFADE_R -> runPulse(255, 0, 0)
+                LedPattern.CROSSFADE_GB -> runFade(GB_2)
+                LedPattern.CROSSFADE_BO -> runFade(BO_2)
+                LedPattern.CROSSFADE_B -> runPulse(0, 0, 255)
+                LedPattern.CROSSFADE_W -> runPulse(255, 255, 255)
+                LedPattern.FLASH_RGB   -> runJump(FLASH_RGB_SEQ)
+                LedPattern.FLASH_ALL   -> runJump(FLASH_ALL_SEQ)
+                LedPattern.STROBE_W    -> runStrobe()
+                LedPattern.SOLID       -> { }
+            }
+        }
+    }
+
+    private fun stopPatternLoop() {
+        patternJob?.cancel()
+        patternJob = null
+    }
+
+    // Instantly jump to each color in sequence and hold
+    private suspend fun runJump(colors: List<Triple<Int, Int, Int>>) {
+        var idx = 0
+        while (true) {
+            val (r, g, b) = colors[idx % colors.size]
+            send(ELKBledomProtocol.setColor(r, g, b))
+            delay(holdMs)
+            idx++
+        }
+    }
+
+    // Smooth linear interpolation between consecutive colors in a loop
+    private suspend fun runFade(colors: List<Triple<Int, Int, Int>>) {
+        val steps = 50
+        var fromIdx = 0
+        while (true) {
+            val toIdx = (fromIdx + 1) % colors.size
+            val (r1, g1, b1) = colors[fromIdx]
+            val (r2, g2, b2) = colors[toIdx]
+            for (step in 0..steps) {
+                val t = step.toFloat() / steps
+                send(ELKBledomProtocol.setColor(
+                    (r1 + t * (r2 - r1)).toInt(),
+                    (g1 + t * (g2 - g1)).toInt(),
+                    (b1 + t * (b2 - b1)).toInt(),
+                ))
+                delay(fadeStepMs)
+            }
+            fromIdx = toIdx
+        }
+    }
+
+    // Fade a single color in from black and back out repeatedly
+    private suspend fun runPulse(r: Int, g: Int, b: Int) {
+        val steps = 50
+        while (true) {
+            for (step in 0..steps) {
+                val t = step.toFloat() / steps
+                send(ELKBledomProtocol.setColor((r * t).toInt(), (g * t).toInt(), (b * t).toInt()))
+                delay(fadeStepMs)
+            }
+            for (step in steps downTo 0) {
+                val t = step.toFloat() / steps
+                send(ELKBledomProtocol.setColor((r * t).toInt(), (g * t).toInt(), (b * t).toInt()))
+                delay(fadeStepMs)
+            }
+        }
+    }
+
+    // White strobe: on/off at the configured delay
+    private suspend fun runStrobe() {
+        while (true) {
+            send(ELKBledomProtocol.setColor(255, 255, 255))
+            delay(holdMs)
+            send(ELKBledomProtocol.setColor(0, 0, 0))
+            delay(holdMs)
         }
     }
 
@@ -177,7 +272,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             _ui.update { it.copy(isScreenSync = false) }
         }
         _ui.update { it.copy(isMusicSync = enabled) }
-        if (enabled) startMusicSync() else stopMusicSync()
+        if (enabled) {
+            stopPatternLoop()
+            startMusicSync()
+        } else {
+            stopMusicSync()
+            if (_ui.value.selectedPattern != LedPattern.SOLID) startPatternLoop()
+        }
     }
 
     // ── Screen sync ───────────────────────────────────────────────────────────
@@ -188,7 +289,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             _ui.update { it.copy(isMusicSync = false) }
         }
         _ui.update { it.copy(isScreenSync = enabled) }
-        if (enabled) startScreenSync() else stopScreenSync()
+        if (enabled) {
+            stopPatternLoop()
+            startScreenSync()
+        } else {
+            stopScreenSync()
+            if (_ui.value.selectedPattern != LedPattern.SOLID) startPatternLoop()
+        }
     }
 
     private fun startScreenSync() {
@@ -202,7 +309,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         screenSyncJob = viewModelScope.launch {
             ScreenAnalyzer.stream(mp, getApplication()).collect { color ->
                 val s = _ui.value
-                // Ambilight smooth: α=0.07 (dreamy); off: α=0.25 (snappy).
                 val alpha = if (s.isAmbilightSmooth) 0.07f else 0.25f
                 val r = (s.screenR + alpha * (color.r - s.screenR)).toInt()
                 val g = (s.screenG + alpha * (color.g - s.screenG)).toInt()
@@ -230,9 +336,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun setBassColor(color: SyncColor)      = _ui.update { it.copy(bassColor = color) }
-    fun setMidColor(color: SyncColor)       = _ui.update { it.copy(midColor  = color) }
-    fun setHighColor(color: SyncColor)      = _ui.update { it.copy(highColor = color) }
+    fun setBassColor(color: SyncColor)       = _ui.update { it.copy(bassColor = color) }
+    fun setMidColor(color: SyncColor)        = _ui.update { it.copy(midColor  = color) }
+    fun setHighColor(color: SyncColor)       = _ui.update { it.copy(highColor = color) }
     fun setAmbilightSmooth(enabled: Boolean) = _ui.update { it.copy(isAmbilightSmooth = enabled) }
 
     fun onMediaProjection(mp: MediaProjection?, cancelled: Boolean = false) {
@@ -265,7 +371,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 AudioAnalyzer.streamMic()
             }
 
-            // Running smoothed colour — persists across frames so interpolation is continuous.
             var sr = 0f; var sg = 0f; var sb = 0f
 
             flow.collect { data ->
@@ -278,7 +383,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     val tr = (br + mr + hr).coerceIn(0, 255).toFloat()
                     val tg = (bg + mg + hg).coerceIn(0, 255).toFloat()
                     val tb = (bb + mb + hb).coerceIn(0, 255).toFloat()
-                    // Ambilight smooth: blend toward target at α=0.2; off = instant (α=1).
                     val alpha = if (s.isAmbilightSmooth) 0.2f else 1f
                     sr += alpha * (tr - sr)
                     sg += alpha * (tg - sg)
@@ -301,6 +405,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     override fun onCleared() {
         super.onCleared()
+        stopPatternLoop()
         mediaProjection?.stop()
         bleManager.disconnect()
     }
@@ -333,3 +438,47 @@ fun hsvToRgb(h: Float, s: Float, v: Float): Triple<Int, Int, Int> {
         else -> Triple(vv, p, q)
     }
 }
+
+// ── Pattern color tables ──────────────────────────────────────────────────────
+
+private val RGB_3 = listOf(
+    Triple(255, 0, 0),
+    Triple(0, 255, 0),
+    Triple(0, 0, 255),
+)
+
+private val RGB_7 = listOf(
+    Triple(255, 0,   0),
+    Triple(255, 128, 0),
+    Triple(255, 255, 0),
+    Triple(0,   255, 0),
+    Triple(0,   255, 255),
+    Triple(0,   0,   255),
+    Triple(255, 0,   255),
+)
+
+private val GB_2 = listOf(
+    Triple(0,255,0),
+    Triple(0,0,255),
+)
+
+private val BO_2 = listOf(
+    Triple(0,0,255),
+    Triple(255,165,0),
+)
+
+private val FLASH_RGB_SEQ = listOf(
+    Triple(255, 0, 0), Triple(0, 0, 0),
+    Triple(0, 255, 0), Triple(0, 0, 0),
+    Triple(0, 0, 255), Triple(0, 0, 0),
+)
+
+private val FLASH_ALL_SEQ = listOf(
+    Triple(255, 0,   0),   Triple(0, 0, 0),
+    Triple(255, 128, 0),   Triple(0, 0, 0),
+    Triple(255, 255, 0),   Triple(0, 0, 0),
+    Triple(0,   255, 0),   Triple(0, 0, 0),
+    Triple(0,   255, 255), Triple(0, 0, 0),
+    Triple(0,   0,   255), Triple(0, 0, 0),
+    Triple(255, 0,   255), Triple(0, 0, 0),
+)

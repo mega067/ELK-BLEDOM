@@ -528,9 +528,9 @@ private fun TvPatternsSection(ui: UiState, vm: MainViewModel) {
         TvSectionTitle("Patterns", Icons.Default.AutoAwesome)
         PatternSelector(
             selectedPattern = ui.selectedPattern,
-            patternSpeed = ui.patternSpeed,
+            patternSpeedMs = ui.patternSpeedMs,
             onPatternSelected = vm::selectPattern,
-            onSpeedChanged = vm::setPatternSpeed,
+            onSpeedChanged = vm::setPatternSpeedMs,
             modifier = Modifier.fillMaxWidth(0.8f),
         )
     }
