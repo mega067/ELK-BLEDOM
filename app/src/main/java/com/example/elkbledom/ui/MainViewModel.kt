@@ -2,6 +2,7 @@ package com.example.elkbledom.ui
 
 import android.app.Application
 import android.bluetooth.BluetoothDevice
+import android.content.Context
 import android.media.projection.MediaProjection
 import android.os.Build
 import androidx.lifecycle.AndroidViewModel
@@ -80,6 +81,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _projectionRequest = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val projectionRequest: SharedFlow<Unit> = _projectionRequest.asSharedFlow()
 
+    private var lastDevice: BluetoothDevice? = null
+    private val prefs = app.getSharedPreferences("elkbledom_prefs", Context.MODE_PRIVATE)
     private var mediaProjection: MediaProjection? = null
     private var connectJob: Job? = null
     private var musicSyncJob: Job? = null
@@ -116,11 +119,25 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun stopScan() = bleManager.stopScan()
 
     fun connectTo(device: BluetoothDevice) {
+        lastDevice = device
+        prefs.edit().putString("last_device_address", device.address).apply()
         connectJob?.cancel()
         connectJob = viewModelScope.launch { bleManager.connect(device) }
     }
 
+    fun reconnectIfNeeded() {
+        val state = _ui.value.connectionState
+        if (state != ConnectionState.DISCONNECTED && state != ConnectionState.ERROR) return
+        val device = lastDevice
+            ?: prefs.getString("last_device_address", null)
+                ?.let { bleManager.getDeviceByAddress(it) }
+            ?: return
+        connectTo(device)
+    }
+
     fun disconnect() {
+        lastDevice = null
+        prefs.edit().remove("last_device_address").apply()
         stopPatternLoop()
         stopMusicSync()
         stopScreenSync()
@@ -373,22 +390,27 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
             var sr = 0f; var sg = 0f; var sb = 0f
 
-            flow.collect { data ->
-                _ui.update { it.copy(freqData = data) }
-                if (_ui.value.connectionState == ConnectionState.CONNECTED) {
-                    val s = _ui.value
-                    val (br, bg, bb) = bandContrib(data.bass, s.bassColor)
-                    val (mr, mg, mb) = bandContrib(data.mid,  s.midColor)
-                    val (hr, hg, hb) = bandContrib(data.high, s.highColor)
-                    val tr = (br + mr + hr).coerceIn(0, 255).toFloat()
-                    val tg = (bg + mg + hg).coerceIn(0, 255).toFloat()
-                    val tb = (bb + mb + hb).coerceIn(0, 255).toFloat()
-                    val alpha = if (s.isAmbilightSmooth) 0.2f else 1f
-                    sr += alpha * (tr - sr)
-                    sg += alpha * (tg - sg)
-                    sb += alpha * (tb - sb)
-                    send(ELKBledomProtocol.setColor(sr.toInt(), sg.toInt(), sb.toInt()))
+            try {
+                flow.collect { data ->
+                    _ui.update { it.copy(freqData = data) }
+                    if (_ui.value.connectionState == ConnectionState.CONNECTED) {
+                        val s = _ui.value
+                        val (br, bg, bb) = bandContrib(data.bass, s.bassColor)
+                        val (mr, mg, mb) = bandContrib(data.mid,  s.midColor)
+                        val (hr, hg, hb) = bandContrib(data.high, s.highColor)
+                        val tr = (br + mr + hr).coerceIn(0, 255).toFloat()
+                        val tg = (bg + mg + hg).coerceIn(0, 255).toFloat()
+                        val tb = (bb + mb + hb).coerceIn(0, 255).toFloat()
+                        val alpha = if (s.isAmbilightSmooth) 0.2f else 1f
+                        sr += alpha * (tr - sr)
+                        sg += alpha * (tg - sg)
+                        sb += alpha * (tb - sb)
+                        send(ELKBledomProtocol.setColor(sr.toInt(), sg.toInt(), sb.toInt()))
+                    }
                 }
+            } catch (_: Exception) {
+                // AudioRecord unavailable (e.g. no microphone on this TV)
+                _ui.update { it.copy(isMusicSync = false) }
             }
         }
     }

@@ -18,10 +18,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
@@ -30,6 +31,7 @@ import androidx.compose.material.icons.filled.BluetoothConnected
 import androidx.compose.material.icons.filled.BluetoothDisabled
 import androidx.compose.material.icons.filled.BluetoothSearching
 import androidx.compose.material.icons.filled.BrightnessHigh
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.LightbulbCircle
 import androidx.compose.material.icons.filled.Mic
@@ -49,7 +51,7 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -62,18 +64,24 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.elkbledom.R
 import com.example.elkbledom.ble.ConnectionState
 import com.example.elkbledom.ble.LedPattern
 import com.example.elkbledom.ble.ScannedDevice
-import com.example.elkbledom.ui.components.PatternSelector
+import kotlinx.coroutines.delay
 
 // ── Section enum ──────────────────────────────────────────────────────────────
 
@@ -95,6 +103,14 @@ fun TvScreen(vm: MainViewModel, onRequestMediaProjection: () -> Unit = {}) {
     val ui by vm.ui.collectAsState()
     var section by remember { mutableStateOf(TvSection.BLUETOOTH) }
 
+    // One shared FocusRequester — passed to the first focusable element of each section.
+    // When the section changes, wait 50 ms for recomposition to finish, then grab focus.
+    val contentFocus = remember { FocusRequester() }
+    LaunchedEffect(section) {
+        delay(50)
+        try { contentFocus.requestFocus() } catch (_: Exception) { }
+    }
+
     LaunchedEffect(vm) {
         vm.projectionRequest.collect { onRequestMediaProjection() }
     }
@@ -113,7 +129,6 @@ fun TvScreen(vm: MainViewModel, onRequestMediaProjection: () -> Unit = {}) {
                 .padding(vertical = 20.dp, horizontal = 10.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            // App logo + title
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
@@ -144,7 +159,6 @@ fun TvScreen(vm: MainViewModel, onRequestMediaProjection: () -> Unit = {}) {
 
             Spacer(Modifier.weight(1f))
 
-            // BT status badge at the bottom
             val connected = ui.connectionState == ConnectionState.CONNECTED
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -165,7 +179,6 @@ fun TvScreen(vm: MainViewModel, onRequestMediaProjection: () -> Unit = {}) {
             }
         }
 
-        // ── Divider ───────────────────────────────────────────────────────────
         Box(
             Modifier
                 .width(1.dp)
@@ -181,12 +194,12 @@ fun TvScreen(vm: MainViewModel, onRequestMediaProjection: () -> Unit = {}) {
                 .padding(horizontal = 48.dp, vertical = 32.dp),
         ) {
             when (section) {
-                TvSection.BLUETOOTH   -> TvBluetoothSection(ui, vm)
-                TvSection.BRIGHTNESS  -> TvBrightnessSection(ui, vm)
-                TvSection.COLOR       -> TvColorSection(ui, vm)
-                TvSection.PATTERNS    -> TvPatternsSection(ui, vm)
-                TvSection.MUSIC_SYNC  -> TvMusicSyncSection(ui, vm)
-                TvSection.SCREEN_SYNC -> TvScreenSyncSection(ui, vm)
+                TvSection.BLUETOOTH   -> TvBluetoothSection(ui, vm, contentFocus)
+                TvSection.BRIGHTNESS  -> TvBrightnessSection(ui, vm, contentFocus)
+                TvSection.COLOR       -> TvColorSection(ui, vm, contentFocus)
+                TvSection.PATTERNS    -> TvPatternsSection(ui, vm, contentFocus)
+                TvSection.MUSIC_SYNC  -> TvMusicSyncSection(ui, vm, contentFocus)
+                TvSection.SCREEN_SYNC -> TvScreenSyncSection(ui, vm, contentFocus)
                 TvSection.SETTINGS    -> TvSettingsSection(ui, vm)
             }
         }
@@ -199,18 +212,20 @@ fun TvScreen(vm: MainViewModel, onRequestMediaProjection: () -> Unit = {}) {
 private fun TvNavItem(section: TvSection, selected: Boolean, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(10.dp)
-    val bg = when {
-        selected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-        focused  -> MaterialTheme.colorScheme.surfaceVariant
-        else     -> Color.Transparent
-    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .onFocusChanged { focused = it.isFocused }
             .clip(shape)
             .clickable(onClick = onClick)
-            .background(bg, shape)
+            .background(
+                when {
+                    selected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                    focused  -> MaterialTheme.colorScheme.surfaceVariant
+                    else     -> Color.Transparent
+                },
+                shape,
+            )
             .then(
                 if (focused) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, shape)
                 else Modifier
@@ -236,7 +251,7 @@ private fun TvNavItem(section: TvSection, selected: Boolean, onClick: () -> Unit
     }
 }
 
-// ── "Not connected" placeholder ───────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 @Composable
 private fun NotConnectedHint() {
@@ -263,8 +278,6 @@ private fun NotConnectedHint() {
     }
 }
 
-// ── Section title ─────────────────────────────────────────────────────────────
-
 @Composable
 private fun TvSectionTitle(title: String, icon: ImageVector) {
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -278,10 +291,47 @@ private fun TvSectionTitle(title: String, icon: ImageVector) {
     )
 }
 
+// A large pill button used for +/− step controls.
+// When focused: filled primary background + border. Press OK to activate.
+@Composable
+private fun TvStepButton(
+    label: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(10.dp)
+    Box(
+        modifier = modifier
+            .onFocusChanged { focused = it.isFocused }
+            .clip(shape)
+            .clickable(onClick = onClick)
+            .background(
+                if (focused) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.surfaceVariant,
+                shape,
+            )
+            .then(
+                if (focused) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, shape)
+                else Modifier
+            )
+            .padding(horizontal = 20.dp, vertical = 14.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = if (focused) MaterialTheme.colorScheme.onPrimary
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
 // ── BLUETOOTH section ─────────────────────────────────────────────────────────
 
 @Composable
-private fun TvBluetoothSection(ui: UiState, vm: MainViewModel) {
+private fun TvBluetoothSection(ui: UiState, vm: MainViewModel, firstFocus: FocusRequester) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -296,7 +346,12 @@ private fun TvBluetoothSection(ui: UiState, vm: MainViewModel) {
                     Text("Connection failed. Try again.", color = MaterialTheme.colorScheme.error)
                     Spacer(Modifier.height(4.dp))
                 }
-                Button(onClick = { vm.startScan() }, modifier = Modifier.height(52.dp)) {
+                Button(
+                    onClick = { vm.startScan() },
+                    modifier = Modifier
+                        .height(52.dp)
+                        .focusRequester(firstFocus),
+                ) {
                     Icon(Icons.Default.BluetoothSearching, null)
                     Spacer(Modifier.width(8.dp))
                     Text("Scan for Devices", fontSize = 17.sp)
@@ -311,7 +366,10 @@ private fun TvBluetoothSection(ui: UiState, vm: MainViewModel) {
                     CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 3.dp)
                     Text("Scanning…", style = MaterialTheme.typography.bodyLarge)
                     Spacer(Modifier.width(4.dp))
-                    FilledTonalButton(onClick = { vm.stopScan() }) { Text("Stop") }
+                    FilledTonalButton(
+                        onClick = { vm.stopScan() },
+                        modifier = Modifier.focusRequester(firstFocus),
+                    ) { Text("Stop") }
                 }
                 if (ui.scannedDevices.isEmpty()) {
                     Text(
@@ -321,8 +379,12 @@ private fun TvBluetoothSection(ui: UiState, vm: MainViewModel) {
                     )
                 } else {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        ui.scannedDevices.forEach { dev ->
-                            TvDeviceCard(dev) { vm.connectTo(dev.device) }
+                        ui.scannedDevices.forEachIndexed { idx, dev ->
+                            TvDeviceCard(
+                                dev = dev,
+                                modifier = if (idx == 0) Modifier.focusRequester(firstFocus) else Modifier,
+                                onClick = { vm.connectTo(dev.device) },
+                            )
                         }
                     }
                 }
@@ -355,7 +417,12 @@ private fun TvBluetoothSection(ui: UiState, vm: MainViewModel) {
                         fontWeight = FontWeight.Medium,
                     )
                     Spacer(Modifier.weight(1f))
-                    FilledTonalButton(onClick = { vm.togglePower() }, modifier = Modifier.height(48.dp)) {
+                    FilledTonalButton(
+                        onClick = { vm.togglePower() },
+                        modifier = Modifier
+                            .height(48.dp)
+                            .focusRequester(firstFocus),
+                    ) {
                         Icon(
                             if (ui.isPoweredOn) Icons.Default.Lightbulb else Icons.Default.LightbulbCircle,
                             null,
@@ -375,11 +442,11 @@ private fun TvBluetoothSection(ui: UiState, vm: MainViewModel) {
 }
 
 @Composable
-private fun TvDeviceCard(dev: ScannedDevice, onClick: () -> Unit) {
+private fun TvDeviceCard(dev: ScannedDevice, modifier: Modifier = Modifier, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(12.dp)
     Card(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .onFocusChanged { focused = it.isFocused }
             .clip(shape)
@@ -414,145 +481,278 @@ private fun TvDeviceCard(dev: ScannedDevice, onClick: () -> Unit) {
 }
 
 // ── BRIGHTNESS section ────────────────────────────────────────────────────────
+// Uses +/− step buttons (press OK to activate) — no sliders.
 
 @Composable
-private fun TvBrightnessSection(ui: UiState, vm: MainViewModel) {
+private fun TvBrightnessSection(ui: UiState, vm: MainViewModel, firstFocus: FocusRequester) {
     if (ui.connectionState != ConnectionState.CONNECTED) { NotConnectedHint(); return }
-    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+
+    Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
         TvSectionTitle("Brightness", Icons.Default.BrightnessHigh)
+
         Text(
             "${ui.brightness}%",
-            style = MaterialTheme.typography.displaySmall,
+            style = MaterialTheme.typography.displayMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary,
         )
-        Slider(
-            value = ui.brightness.toFloat(),
-            onValueChange = { vm.setBrightness(it.toInt()) },
-            valueRange = 1f..100f,
-            modifier = Modifier.fillMaxWidth(0.8f),
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            TvStepButton("−10", modifier = Modifier.focusRequester(firstFocus)) {
+                vm.setBrightness((ui.brightness - 10).coerceAtLeast(1))
+            }
+            TvStepButton("−1") { vm.setBrightness((ui.brightness - 1).coerceAtLeast(1)) }
+            TvStepButton("+1")  { vm.setBrightness((ui.brightness + 1).coerceAtMost(100)) }
+            TvStepButton("+10") { vm.setBrightness((ui.brightness + 10).coerceAtMost(100)) }
+        }
+
+        Text(
+            "Navigate between buttons with D-pad Left / Right, press OK to apply",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
 
-// ── COLOUR section (H/S/V sliders — replaces the touch-only colour wheel) ─────
+// ── COLOUR section ────────────────────────────────────────────────────────────
+// H/S/V each have −10 / −1 / +1 / +10 step buttons.
 
 @Composable
-private fun TvColorSection(ui: UiState, vm: MainViewModel) {
+private fun TvColorSection(ui: UiState, vm: MainViewModel, firstFocus: FocusRequester) {
     if (ui.connectionState != ConnectionState.CONNECTED) { NotConnectedHint(); return }
     val (r, g, b) = hsvToRgb(ui.hue, ui.saturation, ui.colorValue)
 
     Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
         TvSectionTitle("Colour", Icons.Default.Palette)
 
-        Row(horizontalArrangement = Arrangement.spacedBy(40.dp)) {
-            // Live colour preview
+        Row(horizontalArrangement = Arrangement.spacedBy(40.dp), verticalAlignment = Alignment.Top) {
             Box(
                 modifier = Modifier
-                    .size(180.dp, 140.dp)
+                    .size(160.dp, 120.dp)
                     .clip(RoundedCornerShape(16.dp))
                     .background(Color(r / 255f, g / 255f, b / 255f))
-                    .border(
-                        1.dp,
-                        MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-                        RoundedCornerShape(16.dp),
-                    ),
+                    .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(16.dp)),
             )
 
-            // H / S / V sliders
             Column(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                TvSliderRow(
+                TvColorStepRow(
                     label = "Hue",
                     valueText = "${ui.hue.toInt()}°",
-                    value = ui.hue,
-                    range = 0f..360f,
-                    onValueChange = { vm.setHueSaturation(it, ui.saturation) },
+                    firstFocus = firstFocus,
+                    onStep = { big ->
+                        val step = if (big) 10f else 1f
+                        vm.setHueSaturation((ui.hue + step + 360f) % 360f, ui.saturation)
+                    },
+                    onStepBack = { big ->
+                        val step = if (big) 10f else 1f
+                        vm.setHueSaturation((ui.hue - step + 360f) % 360f, ui.saturation)
+                    },
                 )
-                TvSliderRow(
+                TvColorStepRow(
                     label = "Saturation",
                     valueText = "${(ui.saturation * 100).toInt()}%",
-                    value = ui.saturation,
-                    range = 0f..1f,
-                    onValueChange = { vm.setHueSaturation(ui.hue, it) },
+                    onStep = { big ->
+                        vm.setHueSaturation(ui.hue, (ui.saturation + if (big) 0.1f else 0.01f).coerceAtMost(1f))
+                    },
+                    onStepBack = { big ->
+                        vm.setHueSaturation(ui.hue, (ui.saturation - if (big) 0.1f else 0.01f).coerceAtLeast(0f))
+                    },
                 )
-                TvSliderRow(
+                TvColorStepRow(
                     label = "Brightness",
                     valueText = "${(ui.colorValue * 100).toInt()}%",
-                    value = ui.colorValue,
-                    range = 0f..1f,
-                    onValueChange = { vm.setColorValue(it) },
+                    onStep = { big ->
+                        vm.setColorValue((ui.colorValue + if (big) 0.1f else 0.01f).coerceAtMost(1f))
+                    },
+                    onStepBack = { big ->
+                        vm.setColorValue((ui.colorValue - if (big) 0.1f else 0.01f).coerceAtLeast(0f))
+                    },
                 )
             }
         }
+
+        Text(
+            "Navigate rows with D-pad Up / Down, buttons with Left / Right, press OK to apply",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
 @Composable
-private fun TvSliderRow(
+private fun TvColorStepRow(
     label: String,
     valueText: String,
-    value: Float,
-    range: ClosedFloatingPointRange<Float>,
-    onValueChange: (Float) -> Unit,
+    firstFocus: FocusRequester? = null,
+    onStep: (big: Boolean) -> Unit,
+    onStepBack: (big: Boolean) -> Unit,
 ) {
-    Column {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.width(110.dp))
-            Text(
-                valueText,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-            )
-        }
-        Spacer(Modifier.height(4.dp))
-        Slider(
-            value = value,
-            onValueChange = onValueChange,
-            valueRange = range,
-            modifier = Modifier.fillMaxWidth(),
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.width(90.dp),
         )
+        TvStepButton("−10", modifier = if (firstFocus != null) Modifier.focusRequester(firstFocus) else Modifier) {
+            onStepBack(true)
+        }
+        TvStepButton("−1") { onStepBack(false) }
+        Text(
+            valueText,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.width(72.dp),
+        )
+        TvStepButton("+1")  { onStep(false) }
+        TvStepButton("+10") { onStep(true) }
     }
 }
 
 // ── PATTERNS section ──────────────────────────────────────────────────────────
 
-@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
-private fun TvPatternsSection(ui: UiState, vm: MainViewModel) {
+private fun TvPatternsSection(ui: UiState, vm: MainViewModel, firstFocus: FocusRequester) {
     if (ui.connectionState != ConnectionState.CONNECTED) { NotConnectedHint(); return }
-    Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
-        TvSectionTitle("Patterns", Icons.Default.AutoAwesome)
-        PatternSelector(
-            selectedPattern = ui.selectedPattern,
-            patternSpeedMs = ui.patternSpeedMs,
-            onPatternSelected = vm::selectPattern,
-            onSpeedChanged = vm::setPatternSpeedMs,
-            modifier = Modifier.fillMaxWidth(0.8f),
+
+    Row(
+        modifier = Modifier.fillMaxSize(),
+        horizontalArrangement = Arrangement.spacedBy(32.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            TvSectionTitle("Patterns", Icons.Default.AutoAwesome)
+            LedPattern.entries.forEachIndexed { idx, pattern ->
+                TvPatternItem(
+                    pattern = pattern,
+                    selected = pattern == ui.selectedPattern,
+                    onClick = { vm.selectPattern(pattern) },
+                    modifier = if (idx == 0) Modifier.focusRequester(firstFocus) else Modifier,
+                )
+            }
+        }
+
+        AnimatedVisibility(
+            visible = ui.selectedPattern != LedPattern.SOLID,
+            modifier = Modifier
+                .width(220.dp)
+                .align(Alignment.Top)
+                .padding(top = 64.dp),
+        ) {
+            TvDelayInput(
+                patternSpeedMs = ui.patternSpeedMs,
+                onSpeedChanged = vm::setPatternSpeedMs,
+            )
+        }
+    }
+}
+
+@Composable
+private fun TvPatternItem(
+    pattern: LedPattern,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(10.dp)
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .onFocusChanged { focused = it.isFocused }
+            .clip(shape)
+            .clickable(onClick = onClick)
+            .background(
+                when {
+                    selected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                    focused  -> MaterialTheme.colorScheme.surfaceVariant
+                    else     -> Color.Transparent
+                },
+                shape,
+            )
+            .then(
+                if (focused) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, shape)
+                else Modifier
+            )
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        if (selected) {
+            Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+        } else {
+            Spacer(Modifier.size(20.dp))
+        }
+        Text(
+            pattern.displayName,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+        )
+    }
+}
+
+@Composable
+private fun TvDelayInput(patternSpeedMs: Long, onSpeedChanged: (Long) -> Unit) {
+    var text by remember(patternSpeedMs) { mutableStateOf(patternSpeedMs.toString()) }
+    val focusManager = LocalFocusManager.current
+
+    fun commit() {
+        val ms = text.toLongOrNull()?.coerceIn(10L, 5000L)
+        if (ms != null) { onSpeedChanged(ms); text = ms.toString() }
+        else text = patternSpeedMs.toString()
+        focusManager.clearFocus()
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Animation Speed", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        OutlinedTextField(
+            value = text,
+            onValueChange = { text = it.filter { c -> c.isDigit() } },
+            label = { Text("Delay (ms)") },
+            supportingText = { Text("10 – 5000") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Number,
+                imeAction = ImeAction.Done,
+            ),
+            keyboardActions = KeyboardActions(onDone = { commit() }),
+            modifier = Modifier.fillMaxWidth(),
         )
     }
 }
 
 // ── MUSIC SYNC section ────────────────────────────────────────────────────────
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
-private fun TvMusicSyncSection(ui: UiState, vm: MainViewModel) {
+private fun TvMusicSyncSection(ui: UiState, vm: MainViewModel, firstFocus: FocusRequester) {
     if (ui.connectionState != ConnectionState.CONNECTED) { NotConnectedHint(); return }
+
     Column(
         modifier = Modifier.verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         TvSectionTitle("Music Sync", Icons.Default.MusicNote)
 
-        TvToggleRow("Enabled", ui.isMusicSync) { vm.setMusicSync(it) }
+        TvToggleRow("Enabled", ui.isMusicSync, focusRequester = firstFocus) { vm.setMusicSync(it) }
 
         AnimatedVisibility(visible = ui.isMusicSync) {
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                // Audio source
+            Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     FilterChip(
                         selected = ui.audioMode == AudioMode.MIC,
@@ -565,19 +765,21 @@ private fun TvMusicSyncSection(ui: UiState, vm: MainViewModel) {
                         selected = ui.audioMode == AudioMode.PLAYBACK,
                         onClick = { if (ui.isPlaybackSupported) vm.setAudioMode(AudioMode.PLAYBACK) },
                         enabled = ui.isPlaybackSupported,
-                        label = { Text("Phone Audio", fontSize = 15.sp) },
+                        label = { Text("TV Audio", fontSize = 15.sp) },
                         leadingIcon = { Icon(Icons.Default.PhoneAndroid, null, Modifier.size(18.dp)) },
                         modifier = Modifier.height(44.dp),
                     )
                 }
 
-                // Per-band colour pickers (reuses mobile composables)
-                Text("Band Colours", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                BandColorRow("Bass",  ui.bassColor,  vm::setBassColor)
-                BandColorRow("Mids",  ui.midColor,   vm::setMidColor)
-                BandColorRow("Highs", ui.highColor,  vm::setHighColor)
+                Text(
+                    "Band Colours",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                TvBandColorRow("Bass",  ui.bassColor,  vm::setBassColor)
+                TvBandColorRow("Mids",  ui.midColor,   vm::setMidColor)
+                TvBandColorRow("Highs", ui.highColor,  vm::setHighColor)
 
-                // Frequency bars visualiser
                 FreqBars(
                     bass = ui.freqData.bass, mid = ui.freqData.mid, high = ui.freqData.high,
                     isBeat = ui.freqData.isBeat,
@@ -593,11 +795,74 @@ private fun TvMusicSyncSection(ui: UiState, vm: MainViewModel) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TvBandColorRow(label: String, selected: SyncColor, onSelect: (SyncColor) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            SyncColor.entries.forEach { color ->
+                TvColorChip(color = color, selected = color == selected, onClick = { onSelect(color) })
+            }
+        }
+    }
+}
+
+@Composable
+private fun TvColorChip(color: SyncColor, selected: Boolean, onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(20.dp)
+    Row(
+        modifier = Modifier
+            .onFocusChanged { focused = it.isFocused }
+            .clip(shape)
+            .clickable(onClick = onClick)
+            .background(
+                when {
+                    selected -> MaterialTheme.colorScheme.primary
+                    focused  -> MaterialTheme.colorScheme.surfaceVariant
+                    else     -> MaterialTheme.colorScheme.surface
+                },
+                shape,
+            )
+            .then(
+                if (focused) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, shape)
+                else Modifier
+            )
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Box(
+            Modifier
+                .size(14.dp)
+                .clip(CircleShape)
+                .background(color.toComposeColor())
+                .border(0.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f), CircleShape),
+        )
+        Text(
+            color.name,
+            style = MaterialTheme.typography.labelMedium,
+            color = if (selected) MaterialTheme.colorScheme.onPrimary
+                    else MaterialTheme.colorScheme.onSurface,
+        )
+    }
+}
+
 // ── SCREEN SYNC section ───────────────────────────────────────────────────────
 
 @Composable
-private fun TvScreenSyncSection(ui: UiState, vm: MainViewModel) {
+private fun TvScreenSyncSection(ui: UiState, vm: MainViewModel, firstFocus: FocusRequester) {
     if (ui.connectionState != ConnectionState.CONNECTED) { NotConnectedHint(); return }
+
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         TvSectionTitle("Screen Sync", Icons.Default.ScreenShare)
 
@@ -605,7 +870,7 @@ private fun TvScreenSyncSection(ui: UiState, vm: MainViewModel) {
             Text("Screen Sync requires Android 10+", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
-        TvToggleRow("Enabled", ui.isScreenSync, enabled = ui.isPlaybackSupported) {
+        TvToggleRow("Enabled", ui.isScreenSync, enabled = ui.isPlaybackSupported, focusRequester = firstFocus) {
             vm.setScreenSync(it)
         }
 
@@ -658,6 +923,7 @@ private fun TvToggleRow(
     label: String,
     checked: Boolean,
     enabled: Boolean = true,
+    focusRequester: FocusRequester? = null,
     onCheckedChange: (Boolean) -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -667,6 +933,7 @@ private fun TvToggleRow(
             .clip(RoundedCornerShape(10.dp))
             .clickable(enabled = enabled) { onCheckedChange(!checked) }
             .then(if (focused) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(10.dp)) else Modifier)
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .padding(horizontal = 8.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),

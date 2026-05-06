@@ -98,6 +98,13 @@ class BleManager(private val context: Context) {
         stopScan()
         _connectionState.value = ConnectionState.CONNECTING
 
+        // Close any lingering GATT and drain stale events before a new connection attempt
+        bluetoothGatt?.close()
+        bluetoothGatt = null
+        writeCharacteristic = null
+        var drain = gattEvents.tryReceive()
+        while (drain.isSuccess) drain = gattEvents.tryReceive()
+
         bluetoothGatt = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
         } else {
@@ -124,10 +131,13 @@ class BleManager(private val context: Context) {
                         writeCharacteristic = resolveWriteCharacteristic()
                         _connectionState.value = if (writeCharacteristic != null)
                             ConnectionState.CONNECTED else ConnectionState.ERROR
+                        // Do NOT return here — keep the loop alive so future
+                        // STATE_DISCONNECTED callbacks are handled correctly.
+                        if (writeCharacteristic == null) return
                     } else {
                         _connectionState.value = ConnectionState.ERROR
+                        return
                     }
-                    return
                 }
             }
         }
@@ -146,6 +156,10 @@ class BleManager(private val context: Context) {
                     || char.properties and BluetoothGattCharacteristic.PROPERTY_WRITE != 0
             }
     }
+
+    fun getDeviceByAddress(address: String): BluetoothDevice? = try {
+        bluetoothAdapter.getRemoteDevice(address)
+    } catch (_: Exception) { null }
 
     fun disconnect() {
         bluetoothGatt?.disconnect()

@@ -13,6 +13,8 @@
 
 Connect your phone to an ELK-BLEDOM LED strip over Bluetooth and control every aspect of the light — colour, brightness, animated patterns, real-time music sync, and a live screen mirror (Ambilight) mode. Works on both phones and Android TV boxes.
 
+The app remembers your last connected device, so it reconnects automatically when you return — even if Android killed it in the background.
+
 ---
 
 ## Features
@@ -23,7 +25,8 @@ Connect your phone to an ELK-BLEDOM LED strip over Bluetooth and control every a
 - **Brightness control** — independent 1–100 % slider sent directly to the device firmware
 
 ### Animated Patterns
-All patterns are animated entirely on the phone — no unreliable firmware effect codes involved. Only the proven `setColor` command is used.
+
+All patterns are animated entirely on the phone — no unreliable firmware effect codes involved. Only the proven `setColor` command is used, so patterns work identically across all strip revisions.
 
 | Pattern | Description |
 |---|---|
@@ -40,9 +43,10 @@ All patterns are animated entirely on the phone — no unreliable firmware effec
 | Flash All | Flashes all 7 rainbow colours with black gaps |
 | Strobe White | Rapid white strobe |
 
-**Speed** is set by typing a delay in milliseconds directly into the input field (10 – 5000 ms). Lower = faster.
+**Speed** is set by typing a delay in milliseconds directly into the input field (10 – 5000 ms). Lower = faster. The value takes effect on the next animation frame — no restart needed.
 
 ### Music Sync
+
 Real-time FFT analysis drives the LED colour from audio:
 
 - **Microphone mode** — listens to the room; works with any audio source, including headphones
@@ -61,10 +65,17 @@ Real-time FFT analysis drives the LED colour from audio:
 - Mirrors it to the LED strip with configurable smoothing
 
 ### Android TV
+
 - Dedicated two-panel layout designed for D-pad navigation
 - Sidebar navigation with focus-glow highlighting
-- Full feature parity: colour (H/S/V sliders), brightness, patterns, music sync, screen sync, and settings
+- Brightness and colour adjusted with step buttons (no sliders) — fully controllable with just a remote
+- Full feature parity: colour (H/S/V), brightness, patterns, music sync, screen sync, and settings
 - Appears in the Android TV launcher with a custom banner
+
+### Connection Resilience
+
+- **Auto-reconnect on resume** — the last connected device's address is saved to disk; when you return to the app (even after Android killed the process), it reconnects directly without scanning
+- **Explicit disconnect clears the saved address** — the app will not auto-reconnect after you manually disconnect
 
 ### Settings
 - **Ambilight smooth** — exponential blending for gradual colour transitions during Music Sync and Screen Sync (reduces jarring cuts)
@@ -170,6 +181,8 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 3. Tap your device in the list (usually named `ELK-BLEDOM`)
 4. The status indicator turns green when connected
 
+The app saves your device. Next time you open it, it reconnects automatically — no need to scan again.
+
 ### Setting a colour
 
 - Tap the **Colour** row to open the colour picker sheet
@@ -219,6 +232,10 @@ The app auto-detects which UUID pair the strip uses: primary (`FFF0` / `FFF3`) o
 
 > The firmware's built-in effect commands (`7E 05 03 …`) were found to be unreliable across devices. All patterns in this app are animated in software using only the `setColor` command.
 
+### Connection resilience
+
+The last connected device's MAC address is written to `SharedPreferences` on every successful connect. On `onResume()`, the app calls `bluetoothAdapter.getRemoteDevice(address)` — which produces a `BluetoothDevice` for a known address without scanning — and re-establishes the GATT connection. This handles the common case where Android kills the app process in the background while the strip stays connected at the hardware level.
+
 ### Audio analysis
 
 | Parameter | Value |
@@ -233,7 +250,7 @@ The app auto-detects which UUID pair the strip uses: primary (`FFF0` / `FFF3`) o
 
 ### Colour mixing
 
-Each band's energy (0–1) scales its assigned colour; all three are summed:
+Each band's energy (0–1) scales its assigned colour; all three are summed and clamped:
 
 ```
 R = clamp(bass × bassR  +  mid × midR  +  high × highR,  0, 255)
@@ -255,22 +272,22 @@ Every non-Solid pattern runs as a coroutine loop in the ViewModel, sending `setC
 
 ```
 app/src/main/java/com/example/elkbledom/
-├── MainActivity.kt                   # Permission flow, BT enable, TV detection, MediaProjection
+├── MainActivity.kt                   # Permission flow, BT enable, TV detection, MediaProjection, auto-reconnect
 ├── MediaProjectionService.kt         # Foreground service (required before getMediaProjection())
 ├── ble/
-│   ├── BleManager.kt                 # BLE scan, GATT connect, command sender
+│   ├── BleManager.kt                 # BLE scan, GATT connect, command sender, device lookup
 │   └── ELKBledomProtocol.kt          # Byte-frame builders + LedPattern enum
 ├── audio/
 │   └── AudioAnalyzer.kt              # AudioRecord → Hann → FFT → band energy → Flow
 ├── screen/
 │   └── ScreenAnalyzer.kt             # MediaProjection → VirtualDisplay → dominant colour → Flow
 └── ui/
-    ├── MainViewModel.kt              # UiState, pattern coroutines, sync logic
+    ├── MainViewModel.kt              # UiState, pattern coroutines, sync logic, persistent reconnect
     ├── MainScreen.kt                 # Phone UI (scrollable, bottom sheet colour picker)
-    ├── TvScreen.kt                   # TV UI (two-panel D-pad layout)
+    ├── TvScreen.kt                   # TV UI (two-panel D-pad layout, step-button controls)
     ├── components/
     │   ├── ColorPicker.kt            # HSV colour wheel (Canvas) + sliders
-    │   └── PatternSelector.kt        # Pattern dropdown + ms delay input
+    │   └── PatternSelector.kt        # Pattern dropdown + ms delay text input
     └── theme/
         └── Theme.kt                  # Dark Material 3 colour scheme
 ```
@@ -293,6 +310,7 @@ app/src/main/java/com/example/elkbledom/
 
 - **DRM content** (Spotify, Netflix, Apple Music) cannot be captured in Phone Audio mode — use Microphone mode instead
 - **BLE throughput** is limited by the device firmware; pattern animations aim for ~20 fps but the actual update rate depends on the controller
+- **TV boxes without a microphone** — Music Sync falls back gracefully; the toggle reverts if the audio device is unavailable
 - **First build** downloads Gradle and compiles the Compose compiler — allow 5–10 minutes; subsequent builds are incremental
 
 ---

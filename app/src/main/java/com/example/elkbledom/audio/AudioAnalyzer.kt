@@ -48,6 +48,7 @@ object AudioAnalyzer {
         val minBuf = AudioRecord.getMinBufferSize(
             SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT,
         )
+        if (minBuf <= 0) return@flow
         val audioRecord = AudioRecord(
             MediaRecorder.AudioSource.MIC,
             SAMPLE_RATE,
@@ -55,6 +56,10 @@ object AudioAnalyzer {
             AudioFormat.ENCODING_PCM_16BIT,
             maxOf(minBuf, FFT_SIZE * 2),
         )
+        if (audioRecord.state != AudioRecord.STATE_INITIALIZED) {
+            audioRecord.release()
+            return@flow  // no microphone available on this device
+        }
         processAudioRecord(audioRecord, stereo = false) { emit(it) }
     }.flowOn(Dispatchers.Default)
 
