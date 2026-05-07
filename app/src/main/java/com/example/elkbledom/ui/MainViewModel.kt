@@ -408,6 +408,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         send(ELKBledomProtocol.setColor(sr.toInt(), sg.toInt(), sb.toInt()))
                     }
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e // allow normal coroutine cancellation
             } catch (_: Exception) {
                 // AudioRecord unavailable (e.g. no microphone on this TV)
                 _ui.update { it.copy(isMusicSync = false) }
