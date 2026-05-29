@@ -1,6 +1,6 @@
-# ELK-BLEDOM LED Controller
+# ELK-BLEDOM & BJ_LED Controller
 
-> A fully native Android app for controlling ELK-BLEDOM Bluetooth LE LED strips — built with Kotlin and Jetpack Compose.
+> A fully native Android app for controlling ELK-BLEDOM and BJ_LED Bluetooth LE LED strips — built with Kotlin and Jetpack Compose.
 
 ![Min SDK](https://img.shields.io/badge/Android-8.0%2B-brightgreen)
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.1.0-7F52FF)
@@ -11,7 +11,7 @@
 
 ## What it does
 
-Connect your phone to an ELK-BLEDOM LED strip over Bluetooth and control every aspect of the light — colour, brightness, animated patterns, real-time music sync, and a live screen mirror (Ambilight) mode. Works on both phones and Android TV boxes.
+Connect your phone to an ELK-BLEDOM or BJ_LED LED strip over Bluetooth and control every aspect of the light — colour, brightness, animated patterns, real-time music sync, and a live screen mirror (Ambilight) mode. Works on both phones and Android TV boxes.
 
 The app remembers your last connected device, so it reconnects automatically when you return — even if Android killed it in the background.
 
@@ -95,7 +95,7 @@ Real-time FFT analysis drives the LED colour from audio:
 | Android version | 8.0 Oreo (API 26) or higher |
 | Phone Audio / Screen Sync | Android 10 (API 29) or higher |
 | Device | Physical Android phone or TV box — BLE does not work on emulators |
-| LED hardware | ELK-BLEDOM or compatible BLE strip (BLEDOM, LEDBLE, etc.) |
+| LED hardware | ELK-BLEDOM, BJ_LED, or compatible BLE strip (BLEDOM, LEDBLE, MohuanLED, etc.) |
 
 ---
 
@@ -178,7 +178,7 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 1. Power on your LED strip
 2. Open the app and tap **Scan**
-3. Tap your device in the list (usually named `ELK-BLEDOM`)
+3. Tap your device in the list (usually named `ELK-BLEDOM` or `BJ_LED`)
 4. The status indicator turns green when connected
 
 The app saves your device. Next time you open it, it reconnects automatically — no need to scan again.
@@ -217,9 +217,9 @@ The app saves your device. Next time you open it, it reconnects automatically �
 
 ## How it works
 
-### BLE protocol
+### BLE protocol (ELK-BLEDOM)
 
-All commands are 9-byte frames sent with `WRITE_TYPE_NO_RESPONSE` for minimum latency.
+All ELK-BLEDOM commands are 9-byte frames sent with `WRITE_TYPE_NO_RESPONSE` for minimum latency.
 
 | Command | Frame |
 |---|---|
@@ -228,9 +228,21 @@ All commands are 9-byte frames sent with `WRITE_TYPE_NO_RESPONSE` for minimum la
 | Set colour (R, G, B) | `7E 07 05 03 RR GG BB 10 EF` |
 | Set brightness (0–100) | `7E 04 01 BR 00 00 00 00 EF` |
 
-The app auto-detects which UUID pair the strip uses: primary (`FFF0` / `FFF3`) or alternate (`FFE5` / `FFE9`).
+The app auto-detects which ELK-BLEDOM UUID pair the strip uses: primary (`FFF0` / `FFF3`) or alternate (`FFE5` / `FFE9`).
 
-> The firmware's built-in effect commands (`7E 05 03 …`) were found to be unreliable across devices. All patterns in this app are animated in software using only the `setColor` command.
+### BLE protocol (BJ_LED)
+
+BJ_LED commands use a different header and structure, communicating over the `0000EE01` characteristic UUID.
+
+| Command | Frame |
+|---|---|
+| Power on | `69 96 02 01 01` |
+| Power off | `69 96 02 01 00` |
+| Set colour (R, G, B) | `69 96 05 02 RR GG BB` |
+
+*Note: BJ_LED strips do not have a dedicated brightness command. The app handles brightness seamlessly by scaling the RGB values before transmitting them to the device.*
+
+> The firmware's built-in effect commands (`7E 05 03 …` / `69 96 03 …`) were found to be unreliable across devices. All patterns in this app are animated in software using only the `setColor` command.
 
 ### Connection resilience
 

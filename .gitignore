@@ -21,3 +21,7 @@ local.properties
 *.aar
 *.jks
 *.keystore
+
+# Custom ignores
+bj_led_reference/
+.DS_Store

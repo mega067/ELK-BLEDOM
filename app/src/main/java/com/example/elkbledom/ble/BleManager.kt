@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import java.util.Locale
 
 enum class ConnectionState { DISCONNECTED, SCANNING, CONNECTING, CONNECTED, ERROR }
 
@@ -40,6 +41,9 @@ class BleManager(private val context: Context) {
     private val _scannedDevices = MutableStateFlow<List<ScannedDevice>>(emptyList())
     val scannedDevices: StateFlow<List<ScannedDevice>> = _scannedDevices.asStateFlow()
 
+    private val _protocolVariant = MutableStateFlow(ProtocolVariant.ELK_BLEDOM)
+    val protocolVariant: StateFlow<ProtocolVariant> = _protocolVariant.asStateFlow()
+
     private var bluetoothGatt: BluetoothGatt? = null
     private var writeCharacteristic: BluetoothGattCharacteristic? = null
 
@@ -59,7 +63,7 @@ class BleManager(private val context: Context) {
                 val idx = list.indexOfFirst { it.device.address == result.device.address }
                 if (idx >= 0) list.toMutableList().also { it[idx] = entry }
                 else (list + entry).sortedWith(
-                    compareByDescending<ScannedDevice> { "BLEDOM" in it.name.uppercase() }
+                    compareByDescending<ScannedDevice> { "BLEDOM" in it.name.uppercase(Locale.ROOT) || "BJ_LED" in it.name.uppercase(Locale.ROOT) }
                         .thenByDescending { it.rssi }
                 )
             }
@@ -117,6 +121,7 @@ class BleManager(private val context: Context) {
                     if (event.newState == BluetoothProfile.STATE_CONNECTED &&
                         event.status == BluetoothGatt.GATT_SUCCESS
                     ) {
+                        kotlinx.coroutines.delay(600)
                         bluetoothGatt?.discoverServices()
                     } else if (event.newState == BluetoothProfile.STATE_DISCONNECTED) {
                         writeCharacteristic = null
@@ -145,16 +150,44 @@ class BleManager(private val context: Context) {
 
     private fun resolveWriteCharacteristic(): BluetoothGattCharacteristic? {
         val gatt = bluetoothGatt ?: return null
-        // Try primary UUID pair first
+
+        // Try BJ_LED
+        for (service in gatt.services) {
+            val bjChar = service.getCharacteristic(ELKBledomProtocol.BJ_WRITE_CHAR_UUID)
+            if (bjChar != null) {
+                _protocolVariant.value = ProtocolVariant.BJ_LED
+                return bjChar
+            }
+        }
+
+        // Try ELK-BLEDOM Primary UUID pair
+        _protocolVariant.value = ProtocolVariant.ELK_BLEDOM
         val service = gatt.getService(ELKBledomProtocol.SERVICE_UUID)
             ?: gatt.getService(ELKBledomProtocol.SERVICE_UUID_ALT)
-            ?: return null
-        return service.getCharacteristic(ELKBledomProtocol.WRITE_CHAR_UUID)
-            ?: service.getCharacteristic(ELKBledomProtocol.WRITE_CHAR_UUID_ALT)
-            ?: service.characteristics.firstOrNull { char ->
+        
+        if (service != null) {
+            return service.getCharacteristic(ELKBledomProtocol.WRITE_CHAR_UUID)
+                ?: service.getCharacteristic(ELKBledomProtocol.WRITE_CHAR_UUID_ALT)
+                ?: service.characteristics.firstOrNull { char ->
+                    char.properties and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE != 0
+                        || char.properties and BluetoothGattCharacteristic.PROPERTY_WRITE != 0
+                }
+        }
+
+        // Fallback: any write characteristic
+        val isBj = "BJ_LED" in (gatt.device.name?.uppercase(Locale.ROOT) ?: "")
+        if (isBj) {
+            _protocolVariant.value = ProtocolVariant.BJ_LED
+        }
+        for (svc in gatt.services) {
+            val char = svc.characteristics.firstOrNull { char ->
                 char.properties and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE != 0
                     || char.properties and BluetoothGattCharacteristic.PROPERTY_WRITE != 0
             }
+            if (char != null) return char
+        }
+        
+        return null
     }
 
     fun getDeviceByAddress(address: String): BluetoothDevice? = try {

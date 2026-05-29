@@ -12,6 +12,7 @@ import com.example.elkbledom.audio.FrequencyData
 import com.example.elkbledom.ble.BleManager
 import com.example.elkbledom.ble.ConnectionState
 import com.example.elkbledom.ble.ELKBledomProtocol
+import com.example.elkbledom.ble.ProtocolVariant
 import com.example.elkbledom.ble.LedPattern
 import com.example.elkbledom.ble.ScannedDevice
 import com.example.elkbledom.screen.ScreenAnalyzer
@@ -149,14 +150,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun togglePower() {
         val on = !_ui.value.isPoweredOn
         _ui.update { it.copy(isPoweredOn = on) }
-        send(if (on) ELKBledomProtocol.powerOn() else ELKBledomProtocol.powerOff())
+        val variant = bleManager.protocolVariant.value
+        send(if (on) ELKBledomProtocol.powerOn(variant) else ELKBledomProtocol.powerOff(variant))
     }
 
     // ── Brightness ────────────────────────────────────────────────────────────
 
     fun setBrightness(value: Int) {
         _ui.update { it.copy(brightness = value) }
-        send(ELKBledomProtocol.setBrightness(value))
+        val variant = bleManager.protocolVariant.value
+        val cmd = ELKBledomProtocol.setBrightness(value, variant)
+        if (cmd.isNotEmpty()) {
+            send(cmd)
+        }
+        if (variant == ProtocolVariant.BJ_LED) {
+            applyCurrentColor()
+        }
     }
 
     // ── Static color ──────────────────────────────────────────────────────────
@@ -175,7 +184,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (_ui.value.isMusicSync || _ui.value.isScreenSync || _ui.value.selectedPattern != LedPattern.SOLID) return
         val s = _ui.value
         val (r, g, b) = hsvToRgb(s.hue, s.saturation, s.colorValue)
-        send(ELKBledomProtocol.setColor(r, g, b))
+        val variant = bleManager.protocolVariant.value
+        if (variant == ProtocolVariant.BJ_LED) {
+            val factor = s.brightness / 100f
+            send(ELKBledomProtocol.setColor((r * factor).toInt(), (g * factor).toInt(), (b * factor).toInt(), variant))
+        } else {
+            send(ELKBledomProtocol.setColor(r, g, b, variant))
+        }
     }
 
     // ── Patterns ──────────────────────────────────────────────────────────────
@@ -227,7 +242,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         var idx = 0
         while (true) {
             val (r, g, b) = colors[idx % colors.size]
-            send(ELKBledomProtocol.setColor(r, g, b))
+            val variant = bleManager.protocolVariant.value
+            send(ELKBledomProtocol.setColor(r, g, b, variant))
             delay(holdMs)
             idx++
         }
@@ -243,10 +259,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val (r2, g2, b2) = colors[toIdx]
             for (step in 0..steps) {
                 val t = step.toFloat() / steps
+                val variant = bleManager.protocolVariant.value
                 send(ELKBledomProtocol.setColor(
                     (r1 + t * (r2 - r1)).toInt(),
                     (g1 + t * (g2 - g1)).toInt(),
                     (b1 + t * (b2 - b1)).toInt(),
+                    variant
                 ))
                 delay(fadeStepMs)
             }
@@ -260,12 +278,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         while (true) {
             for (step in 0..steps) {
                 val t = step.toFloat() / steps
-                send(ELKBledomProtocol.setColor((r * t).toInt(), (g * t).toInt(), (b * t).toInt()))
+                val variant = bleManager.protocolVariant.value
+                send(ELKBledomProtocol.setColor((r * t).toInt(), (g * t).toInt(), (b * t).toInt(), variant))
                 delay(fadeStepMs)
             }
             for (step in steps downTo 0) {
                 val t = step.toFloat() / steps
-                send(ELKBledomProtocol.setColor((r * t).toInt(), (g * t).toInt(), (b * t).toInt()))
+                val variant = bleManager.protocolVariant.value
+                send(ELKBledomProtocol.setColor((r * t).toInt(), (g * t).toInt(), (b * t).toInt(), variant))
                 delay(fadeStepMs)
             }
         }
@@ -274,9 +294,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // White strobe: on/off at the configured delay
     private suspend fun runStrobe() {
         while (true) {
-            send(ELKBledomProtocol.setColor(255, 255, 255))
+            val variant = bleManager.protocolVariant.value
+            send(ELKBledomProtocol.setColor(255, 255, 255, variant))
             delay(holdMs)
-            send(ELKBledomProtocol.setColor(0, 0, 0))
+            send(ELKBledomProtocol.setColor(0, 0, 0, variant))
             delay(holdMs)
         }
     }
@@ -332,7 +353,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 val b = (s.screenB + alpha * (color.b - s.screenB)).toInt()
                 _ui.update { it.copy(screenR = r, screenG = g, screenB = b) }
                 if (s.connectionState == ConnectionState.CONNECTED) {
-                    send(ELKBledomProtocol.setColor(r, g, b))
+                    val variant = bleManager.protocolVariant.value
+                    if (variant == ProtocolVariant.BJ_LED) {
+                        val factor = _ui.value.brightness / 100f
+                        send(ELKBledomProtocol.setColor((r * factor).toInt(), (g * factor).toInt(), (b * factor).toInt(), variant))
+                    } else {
+                        send(ELKBledomProtocol.setColor(r, g, b, variant))
+                    }
                 }
             }
         }
@@ -405,7 +432,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         sr += alpha * (tr - sr)
                         sg += alpha * (tg - sg)
                         sb += alpha * (tb - sb)
-                        send(ELKBledomProtocol.setColor(sr.toInt(), sg.toInt(), sb.toInt()))
+                        val variant = bleManager.protocolVariant.value
+                        if (variant == ProtocolVariant.BJ_LED) {
+                            val factor = s.brightness / 100f
+                            send(ELKBledomProtocol.setColor((sr * factor).toInt(), (sg * factor).toInt(), (sb * factor).toInt(), variant))
+                        } else {
+                            send(ELKBledomProtocol.setColor(sr.toInt(), sg.toInt(), sb.toInt(), variant))
+                        }
                     }
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
