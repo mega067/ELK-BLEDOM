@@ -20,6 +20,16 @@ The app remembers your last connected device, so it reconnects automatically whe
 
 ---
 
+## Background Synchronization (Background Fix)
+
+This version includes a critical background synchronization fix ensuring the LED strip communication and music sync **do not freeze or stop** when the application is minimized or when other applications (like Spotify) are opened:
+
+* **Background Microphone Access**: Added the `FOREGROUND_SERVICE_MICROPHONE` permission and modified `MediaProjectionService` to support both `microphone` and `mediaProjection` foreground types. This allows the app to process microphone FFT analysis in the background without Android OS restrictions.
+* **Persistent Lifecycle Service Controller**: Replaced the activity-bound `repeatOnLifecycle` collection with a persistent lifecycle-scope controller inside `MainActivity`. The foreground service is now launched dynamically with the correct service type, protecting BLE transmission in all sync states.
+* **Release virtual display safety check**: Added safe null-checking (`display?.release()`) when destroying virtual projection threads, preventing potential app crashes.
+
+---
+
 ## Features
 
 ### Colour & Brightness
