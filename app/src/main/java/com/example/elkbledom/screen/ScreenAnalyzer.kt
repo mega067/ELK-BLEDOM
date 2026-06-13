@@ -105,7 +105,7 @@ object ScreenAnalyzer {
         )
 
         awaitClose {
-            display.release()
+            display?.release()
             reader.close()
             handlerThread.quit()
         }

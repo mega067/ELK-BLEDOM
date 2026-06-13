@@ -8,11 +8,15 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
+import android.content.pm.ServiceInfo
 import android.content.res.Configuration
 import android.media.projection.MediaProjectionManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.os.PowerManager
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.ActivityResult
@@ -95,7 +99,9 @@ class MainActivity : ComponentActivity() {
         if (result.resultCode == RESULT_OK && result.data != null) {
             pendingResult = result
             // Start the foreground service first; getMediaProjection() fires in onServiceConnected
-            val intent = Intent(this, MediaProjectionService::class.java)
+            val intent = Intent(this, MediaProjectionService::class.java).apply {
+                putExtra(MediaProjectionService.EXTRA_SERVICE_TYPE, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+            }
             startForegroundService(intent)
             bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
         } else {
@@ -137,22 +143,42 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Stop the projection service (and release the MediaProjection) whenever the
-        // user turns off music sync or switches back to mic mode.
+        // Manage the foreground service lifecycle (Microphone or MediaProjection) 
+        // to keep the app syncing when minimized/in background.
         lifecycleScope.launch {
-            repeatOnLifecycle(Lifecycle.State.STARTED) {
-                var wasCapturing = false
-                viewModel.ui
-                    .map { (it.isMusicSync && it.audioMode == AudioMode.PLAYBACK) || it.isScreenSync }
-                    .distinctUntilChanged()
-                    .collect { isCapturing ->
-                        if (!isCapturing && wasCapturing) {
-                            stopService(Intent(this@MainActivity, MediaProjectionService::class.java))
-                            viewModel.releaseProjection()
-                        }
-                        wasCapturing = isCapturing
+            var currentType: Int? = null
+            viewModel.ui
+                .map { state ->
+                    val needed = state.isScreenSync || state.isMusicSync
+                    if (!needed) null
+                    else if (state.isScreenSync || (state.isMusicSync && state.audioMode == AudioMode.PLAYBACK)) {
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+                    } else {
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
                     }
-            }
+                }
+                .distinctUntilChanged()
+                .collect { newType ->
+                    if (newType != currentType) {
+                        if (currentType != null) {
+                            stopService(Intent(this@MainActivity, MediaProjectionService::class.java))
+                            if (currentType == ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION) {
+                                viewModel.releaseProjection()
+                            }
+                        }
+                        if (newType != null) {
+                            if (newType == ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION) {
+                                launchProjectionConsent()
+                            } else {
+                                val intent = Intent(this@MainActivity, MediaProjectionService::class.java).apply {
+                                    putExtra(MediaProjectionService.EXTRA_SERVICE_TYPE, newType)
+                                }
+                                startForegroundService(intent)
+                            }
+                        }
+                        currentType = newType
+                    }
+                }
         }
 
         setContent {
@@ -178,6 +204,7 @@ class MainActivity : ComponentActivity() {
         }
 
         requestPermissions()
+        checkAndRequestBatteryOptimizations()
     }
 
     private fun requestPermissions() {
@@ -204,6 +231,26 @@ class MainActivity : ComponentActivity() {
 
     private fun bluetoothAdapter(): BluetoothAdapter? =
         (getSystemService(BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
+
+    fun isIgnoringBatteryOptimizations(): Boolean {
+        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        return powerManager.isIgnoringBatteryOptimizations(packageName)
+    }
+
+    fun checkAndRequestBatteryOptimizations() {
+        if (!isIgnoringBatteryOptimizations()) {
+            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                data = Uri.parse("package:$packageName")
+            }
+            try {
+                startActivity(intent)
+            } catch (e: Exception) {
+                try {
+                    startActivity(Intent(Settings.ACTION_SETTINGS))
+                } catch (_: Exception) {}
+            }
+        }
+    }
 }
 
 // ── Gating composables ────────────────────────────────────────────────────────

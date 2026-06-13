@@ -3,14 +3,18 @@ package com.example.elkbledom
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 
 class MediaProjectionService : Service() {
+
+    private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onBind(intent: Intent): IBinder = Binder()
 
@@ -24,15 +28,43 @@ class MediaProjectionService : Service() {
             .setOngoing(true)
             .build()
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID, notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION,
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
+        val serviceType = intent?.getIntExtra(EXTRA_SERVICE_TYPE, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+            ?: ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(NOTIFICATION_ID, notification, serviceType)
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (e: SecurityException) {
+            // Android 14+ throws SecurityException if token/permission isn't valid/granted yet
+            e.printStackTrace()
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
-        return START_NOT_STICKY
+
+        if (wakeLock == null) {
+            val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+            wakeLock = powerManager.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "ELKBledom::MediaProjectionWakeLock"
+            ).apply {
+                acquire()
+            }
+        }
+
+        return START_STICKY
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        wakeLock?.let {
+            if (it.isHeld) {
+                it.release()
+            }
+        }
+        wakeLock = null
     }
 
     private fun ensureChannel() {
@@ -47,5 +79,6 @@ class MediaProjectionService : Service() {
     companion object {
         const val CHANNEL_ID = "music_sync_capture"
         const val NOTIFICATION_ID = 1001
+        const val EXTRA_SERVICE_TYPE = "extra_service_type"
     }
 }
