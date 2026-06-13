@@ -2,9 +2,12 @@
 
 > A fully native Android app for controlling ELK-BLEDOM and BJ_LED Bluetooth LE LED strips — built with Kotlin and Jetpack Compose.
 
+[![Download APK](https://img.shields.io/badge/Download-APK-green?style=for-the-badge&logo=android)](https://github.com/mega067/ELK-BLEDOM/releases/tag/v1.0.0-bgfix)
+![GitHub Stars](https://img.shields.io/github/stars/mega067/ELK-BLEDOM?style=social)
+![GitHub Forks](https://img.shields.io/github/forks/mega067/ELK-BLEDOM?style=social)
+![GitHub Release Downloads](https://img.shields.io/github/downloads/mega067/ELK-BLEDOM/v1.0.0-bgfix/total?label=Downloads)
 ![Min SDK](https://img.shields.io/badge/Android-8.0%2B-brightgreen)
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.1.0-7F52FF)
-![Compose BOM](https://img.shields.io/badge/Compose%20BOM-2024.12.01-4285F4)
 ![License](https://img.shields.io/badge/License-MIT-blue)
 
 ---
@@ -315,6 +318,18 @@ app/src/main/java/com/example/elkbledom/
 | `RECORD_AUDIO` | Microphone input for Music Sync |
 | `FOREGROUND_SERVICE` | Keeps the capture service alive in the background |
 | `FOREGROUND_SERVICE_MEDIA_PROJECTION` | Required for MediaProjection foreground service (Android 14+) |
+
+---
+## Background Synchronization Fix
+
+We implemented continuous background sync so the app does not stop communicating with the lights when minimized or when other apps (such as Spotify) run in the foreground.
+
+### Key Changes & Modified Files:
+* **Foreground Service Enhancements**:
+  * **[AndroidManifest.xml](file:///home/angel/Documentos/REPOS/Leds/ELK-BLEDOM/app/src/main/AndroidManifest.xml)**: Declared the `<uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />` permission. Upgraded the `<service>` tag to support `mediaProjection|microphone` types.
+  * **[MediaProjectionService.kt](file:///home/angel/Documentos/REPOS/Leds/ELK-BLEDOM/app/src/main/java/com/example/elkbledom/MediaProjectionService.kt)**: Extended the service to accept custom foreground types dynamically using intent extras.
+* **Persistent Service Lifecycle Controller**:
+  * **[MainActivity.kt](file:///home/angel/Documentos/REPOS/Leds/ELK-BLEDOM/app/src/main/java/com/example/elkbledom/MainActivity.kt)**: Migrated the service controller away from `repeatOnLifecycle(Lifecycle.State.STARTED)` to avoid service termination on minimization. Instead, the service automatically adjusts between `microphone` and `mediaProjection` types under the application scope and remains active in the background.
 
 ---
 
